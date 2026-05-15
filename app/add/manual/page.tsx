@@ -1,225 +1,361 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { saveExpense, generateId, getTodayDate } from '@/lib/storage'
-import { DEFAULT_CATEGORIES } from '@/constants/categories'
-import { formatCurrency } from '@/lib/utils'
-import type { Expense } from '@/types'
-
-type Step = 'amount' | 'details'
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  Screen,
+  ScreenBody,
+  AppHeader,
+  T,
+  PrimaryButton,
+  FieldRow,
+  BottomSheet,
+  CatIcon,
+} from '@/components/ui';
+import { saveExpense, generateId, getTodayDate } from '@/lib/storage';
+import { DEFAULT_CATEGORIES } from '@/constants/categories';
+import type { Expense } from '@/types';
 
 export default function ManualAddPage() {
-  const router = useRouter()
-  const [step, setStep] = useState<Step>('amount')
-  const [amount, setAmount] = useState('')
-  const [date, setDate] = useState(getTodayDate())
-  const [merchant, setMerchant] = useState('')
-  const [category, setCategory] = useState('food')
-  const [memo, setMemo] = useState('')
+  const router = useRouter();
+  const [amount, setAmount] = useState(0);
+  const [merchant, setMerchant] = useState('');
+  const [catId, setCatId] = useState('food');
+  const [date, setDate] = useState(getTodayDate());
+  const [memo, setMemo] = useState('');
+  const [catSheetOpen, setCatSheetOpen] = useState(false);
 
-  // 숫자 키패드 입력
-  const handleKeyPress = (key: string) => {
-    if (key === 'backspace') {
-      setAmount(prev => prev.slice(0, -1))
-    } else if (key === 'clear') {
-      setAmount('')
-    } else if (key === '00') {
-      if (amount.length > 0 && amount.length <= 8) {
-        setAmount(prev => prev + '00')
-      }
+  const cat = DEFAULT_CATEGORIES.find((c) => c.id === catId) || DEFAULT_CATEGORIES[0];
+
+  const pressKey = (k: string) => {
+    if (k === 'del') {
+      setAmount(Math.floor(amount / 10));
+    } else if (k === '00') {
+      const next = amount * 100;
+      if (next < 1_000_000_000) setAmount(next);
     } else {
-      if (amount.length < 10) {
-        setAmount(prev => prev + key)
-      }
+      const next = amount * 10 + Number(k);
+      if (next < 1_000_000_000) setAmount(next);
     }
-  }
+  };
 
-  // 다음 단계로
-  const handleNext = () => {
-    if (!amount || parseInt(amount) <= 0) {
-      return
-    }
-    setStep('details')
-  }
+  const canSave = amount > 0 && merchant.trim().length > 0;
 
-  // 저장
-  const handleSubmit = () => {
-    if (!merchant.trim()) {
-      alert('사용처를 입력해주세요')
-      return
-    }
-
+  const handleSave = () => {
     const expense: Expense = {
       id: generateId(),
       date,
-      amount: parseInt(amount),
+      amount,
       merchant: merchant.trim(),
-      category,
+      category: catId,
       memo: memo.trim(),
       createdAt: new Date().toISOString(),
       source: 'manual',
-    }
+    };
+    saveExpense(expense);
+    router.push('/');
+  };
 
-    saveExpense(expense)
-    router.push('/expenses')
-  }
-
-  const displayAmount = amount ? parseInt(amount) : 0
-
-  // 금액 입력 단계
-  if (step === 'amount') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        {/* 헤더 */}
-        <header className="p-4">
-          <button onClick={() => router.back()} className="text-gray-500">
-            ← 뒤로
-          </button>
-        </header>
-
-        {/* 금액 표시 */}
-        <div className="flex-1 flex flex-col items-center justify-center px-4">
-          <p className="text-gray-500 mb-2">얼마를 썼나요?</p>
-          <div className="text-4xl font-bold text-gray-900">
-            {formatCurrency(displayAmount)}
-          </div>
-        </div>
-
-        {/* 숫자 키패드 */}
-        <div className="bg-white border-t p-4 pb-8">
-          <div className="grid grid-cols-3 gap-2 max-w-sm mx-auto">
-            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'backspace'].map((key) => (
-              <button
-                key={key}
-                onClick={() => handleKeyPress(key)}
-                className={`h-14 rounded-xl text-xl font-medium transition-colors ${
-                  key === 'backspace'
-                    ? 'bg-gray-100 text-gray-600'
-                    : 'bg-gray-50 text-gray-900 active:bg-gray-200'
-                }`}
-              >
-                {key === 'backspace' ? '⌫' : key}
-              </button>
-            ))}
-          </div>
-
-          {/* 다음 버튼 */}
-          <button
-            onClick={handleNext}
-            disabled={!amount || parseInt(amount) <= 0}
-            className={`w-full mt-4 py-4 rounded-xl font-semibold text-white ${
-              !amount || parseInt(amount) <= 0
-                ? 'bg-gray-300'
-                : 'bg-blue-600'
-            }`}
-          >
-            다음
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // 상세 정보 입력 단계
   return (
-    <div className="min-h-screen bg-gray-50 pb-32">
-      {/* 헤더 */}
-      <header className="p-4 bg-white border-b">
-        <button onClick={() => setStep('amount')} className="text-gray-500">
-          ← 뒤로
-        </button>
-        <div className="mt-2">
-          <p className="text-sm text-gray-500">지출 금액</p>
-          <p className="text-2xl font-bold text-blue-600">{formatCurrency(displayAmount)}</p>
-        </div>
-      </header>
-
-      <div className="p-4 space-y-4">
-        {/* 날짜 */}
-        <div className="card p-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            날짜
-          </label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full p-3 border border-gray-200 rounded-lg"
-          />
-        </div>
-
-        {/* 사용처 */}
-        <div className="card p-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            사용처
-          </label>
-          <input
-            type="text"
-            value={merchant}
-            onChange={(e) => setMerchant(e.target.value)}
-            placeholder="어디서 썼나요?"
-            className="w-full p-3 border border-gray-200 rounded-lg"
-          />
-        </div>
-
-        {/* 카테고리 */}
-        <div className="card p-4">
-          <label className="block text-sm font-medium text-gray-700 mb-3">
-            카테고리
-          </label>
-          <div className="grid grid-cols-4 gap-2">
-            {DEFAULT_CATEGORIES.filter(c => c.id !== 'other').map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setCategory(cat.id)}
-                className={`p-3 rounded-xl border-2 transition-all ${
-                  category === cat.id
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-100 bg-white'
-                }`}
-              >
-                <span className="text-xl block">{cat.icon}</span>
-                <span className={`text-xs mt-1 block ${
-                  category === cat.id ? 'text-blue-700 font-semibold' : 'text-gray-600'
-                }`}>
-                  {cat.name}
-                </span>
-              </button>
-            ))}
+    <Screen>
+      <AppHeader title="직접 입력" onBack={() => router.push('/add')} />
+      <ScreenBody padBottom={24}>
+        {/* amount hero */}
+        <div
+          style={{
+            padding: '32px 20px 24px',
+            textAlign: 'center',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              color: T.textSec,
+              fontWeight: 500,
+              marginBottom: 12,
+            }}
+          >
+            얼마를 썼나요?
+          </div>
+          <div
+            style={{
+              fontSize: 44,
+              fontWeight: 800,
+              letterSpacing: '-0.03em',
+              color: amount === 0 ? T.textMuted : T.text,
+              fontVariantNumeric: 'tabular-nums',
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'center',
+              gap: 6,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 30,
+                fontWeight: 700,
+                color: amount === 0 ? T.textMuted : T.textSec,
+              }}
+            >
+              ₩
+            </span>
+            {amount.toLocaleString('ko-KR')}
           </div>
         </div>
 
-        {/* 메모 */}
-        <div className="card p-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            메모 <span className="text-gray-400 font-normal">(선택)</span>
-          </label>
-          <input
-            type="text"
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            placeholder="메모를 입력하세요"
-            className="w-full p-3 border border-gray-200 rounded-lg"
-          />
+        {/* form fields */}
+        <div style={{ padding: '0 20px', marginBottom: 16 }}>
+          <div
+            style={{
+              background: T.bgSoft,
+              borderRadius: 16,
+              overflow: 'hidden',
+            }}
+          >
+            <FieldRow label="사용처" style={{ background: 'transparent' }}>
+              <input
+                value={merchant}
+                onChange={(e) => setMerchant(e.target.value)}
+                placeholder="예: 스타벅스"
+                style={{
+                  border: 0,
+                  background: 'transparent',
+                  textAlign: 'right',
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: T.text,
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                  width: '100%',
+                  outline: 'none',
+                }}
+              />
+            </FieldRow>
+            <FieldRow label="카테고리" style={{ background: 'transparent' }}>
+              <button
+                onClick={() => setCatSheetOpen(true)}
+                style={{
+                  border: 0,
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: T.text,
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    background: cat.color,
+                    display: 'inline-block',
+                  }}
+                />
+                {cat.name}
+                <svg width="14" height="14" viewBox="0 0 14 14">
+                  <path
+                    d="M4 5l3 3 3-3"
+                    stroke={T.textTer}
+                    strokeWidth="1.5"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            </FieldRow>
+            <FieldRow label="날짜" style={{ background: 'transparent' }}>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                style={{
+                  border: 0,
+                  background: 'transparent',
+                  textAlign: 'right',
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: T.text,
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                  outline: 'none',
+                }}
+              />
+            </FieldRow>
+            <FieldRow label="메모" style={{ background: 'transparent', borderBottom: 0 }}>
+              <input
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder="선택사항"
+                style={{
+                  border: 0,
+                  background: 'transparent',
+                  textAlign: 'right',
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: T.text,
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                  width: '100%',
+                  outline: 'none',
+                }}
+              />
+            </FieldRow>
+          </div>
         </div>
-      </div>
 
-      {/* 저장 버튼 */}
-      <div className="fixed bottom-20 left-0 right-0 bg-white border-t p-4">
-        <button
-          onClick={handleSubmit}
-          disabled={!merchant.trim()}
-          className={`w-full py-4 rounded-xl font-semibold text-white ${
-            !merchant.trim()
-              ? 'bg-gray-300'
-              : 'bg-blue-600'
-          }`}
-        >
-          저장하기
-        </button>
+        {/* numpad */}
+        <div style={{ padding: '0 12px 12px' }}>
+          <Numpad onKey={pressKey} />
+        </div>
+
+        {/* save */}
+        <div style={{ padding: '8px 20px 16px' }}>
+          <PrimaryButton onClick={handleSave} disabled={!canSave}>
+            저장
+          </PrimaryButton>
+        </div>
+      </ScreenBody>
+
+      <BottomSheet
+        open={catSheetOpen}
+        onClose={() => setCatSheetOpen(false)}
+        title="카테고리 선택"
+        height="70%"
+      >
+        <CategoryPicker
+          catId={catId}
+          onPick={(cid) => {
+            setCatId(cid);
+            setCatSheetOpen(false);
+          }}
+        />
+      </BottomSheet>
+    </Screen>
+  );
+}
+
+function Numpad({ onKey }: { onKey: (k: string) => void }) {
+  const keys = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+    ['00', '0', 'del'],
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {keys.map((row, i) => (
+        <div key={i} style={{ display: 'flex', gap: 4 }}>
+          {row.map((k) => (
+            <button
+              key={k}
+              onClick={() => onKey(k)}
+              style={{
+                flex: 1,
+                height: 52,
+                border: 0,
+                background: 'transparent',
+                fontFamily: 'Pretendard, system-ui, sans-serif',
+                fontSize: 22,
+                fontWeight: 600,
+                color: T.text,
+                cursor: 'pointer',
+                borderRadius: 10,
+                transition: 'background .1s',
+              }}
+              onMouseDown={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.background = T.bgMuted)
+              }
+              onMouseUp={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')
+              }
+            >
+              {k === 'del' ? (
+                <svg
+                  width="22"
+                  height="16"
+                  viewBox="0 0 22 16"
+                  style={{ display: 'inline-block' }}
+                >
+                  <path
+                    d="M7 1h13a1.5 1.5 0 011.5 1.5v11A1.5 1.5 0 0120 15H7L1 8z"
+                    fill="none"
+                    stroke={T.text}
+                    strokeWidth="1.6"
+                  />
+                  <path
+                    d="M11 5l5 5M16 5l-5 5"
+                    stroke={T.text}
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              ) : (
+                k
+              )}
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CategoryPicker({
+  catId,
+  onPick,
+}: {
+  catId: string;
+  onPick: (cid: string) => void;
+}) {
+  const categories = DEFAULT_CATEGORIES.filter((c) => c.id !== 'other');
+
+  return (
+    <div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 10,
+          padding: '0 20px 16px',
+        }}
+      >
+        {categories.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => onPick(c.id)}
+            style={{
+              border: 0,
+              padding: '14px 8px',
+              borderRadius: 14,
+              cursor: 'pointer',
+              background: c.id === catId ? c.color + '18' : T.bgSoft,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 6,
+              position: 'relative',
+            }}
+          >
+            <CatIcon catId={c.id} size={36} />
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: c.id === catId ? c.color : T.textSec,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {c.name}
+            </div>
+          </button>
+        ))}
       </div>
     </div>
-  )
+  );
 }

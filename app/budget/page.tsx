@@ -1,216 +1,746 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { getBudget, saveBudget, getCurrentMonth, getMonthlySummary } from '@/lib/storage'
-import { formatCurrency, formatMonth } from '@/lib/utils'
-import { DEFAULT_CATEGORIES } from '@/constants/categories'
-import type { Budget } from '@/types'
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  Screen,
+  ScreenBody,
+  AppHeader,
+  T,
+  MoneyText,
+  SecondaryButton,
+  CatIcon,
+  BottomSheet,
+  PrimaryButton,
+} from '@/components/ui';
+import {
+  getBudget,
+  saveBudget,
+  getCurrentMonth,
+  getMonthlySummary,
+  getMonthlyTotal,
+  getQuarterlyTotal,
+  getHalfYearTotal,
+  getYearlyTotal,
+} from '@/lib/storage';
+import { DEFAULT_CATEGORIES } from '@/constants/categories';
+import type { Budget } from '@/types';
+
+type PeriodType = 'year' | 'half' | 'quarter' | 'month';
+
+// Resolve a period (type + offset from "current") to a display label + actual values.
+function periodInfo(type: PeriodType, offset: number) {
+  const now = new Date();
+  const baseY = now.getFullYear();
+  const baseM = now.getMonth() + 1;
+
+  if (type === 'year') {
+    const y = baseY + offset;
+    return { title: `${y}년 예산`, sub: '연간 예산', short: `${y}년`, year: y };
+  }
+  if (type === 'half') {
+    const currentHalf = baseM <= 6 ? 0 : 1;
+    const idx = baseY * 2 + currentHalf + offset;
+    const y = Math.floor(idx / 2);
+    const h = ((idx % 2) + 2) % 2;
+    return {
+      title: `${y} ${h === 0 ? '상' : '하'}반기 예산`,
+      sub: '6개월 예산',
+      short: `${y} ${h === 0 ? '상' : '하'}반기`,
+      year: y,
+      half: (h + 1) as 1 | 2,
+    };
+  }
+  if (type === 'quarter') {
+    const currentQ = Math.ceil(baseM / 3);
+    const idx = baseY * 4 + (currentQ - 1) + offset;
+    const y = Math.floor(idx / 4);
+    const q = (((idx % 4) + 4) % 4) + 1;
+    return {
+      title: `${y} ${q}분기 예산`,
+      sub: '3개월 예산',
+      short: `${y} ${q}분기`,
+      year: y,
+      quarter: q as 1 | 2 | 3 | 4,
+    };
+  }
+  // month
+  const idx = baseY * 12 + (baseM - 1) + offset;
+  const y = Math.floor(idx / 12);
+  const m = (((idx % 12) + 12) % 12) + 1;
+  return {
+    title: `${y}년 ${m}월 예산`,
+    sub: '월 예산',
+    short: `${y}년 ${m}월`,
+    year: y,
+    month: m,
+    monthKey: `${y}-${String(m).padStart(2, '0')}`,
+  };
+}
+
+// 원화 포맷 함수
+function formatWonShort(amount: number): string {
+  if (amount >= 10000) {
+    return (amount / 10000).toFixed(0) + '만원';
+  }
+  return '₩' + Math.abs(Math.round(amount)).toLocaleString('ko-KR');
+}
 
 export default function BudgetPage() {
-  const [budget, setBudgetState] = useState<Budget | null>(null)
-  const [editingMonthly, setEditingMonthly] = useState('')
-  const [editingCategories, setEditingCategories] = useState<{ [key: string]: string }>({})
-  const [isEditing, setIsEditing] = useState(false)
+  const router = useRouter();
+  const [budget, setBudgetState] = useState<Budget | null>(null);
+  const [period, setPeriod] = useState<PeriodType>('month');
+  const [offset, setOffset] = useState(0);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  const currentMonth = getCurrentMonth()
+  const currentMonth = getCurrentMonth();
 
   useEffect(() => {
-    loadBudget()
-  }, [])
+    setMounted(true);
+    loadBudget();
+  }, []);
 
   const loadBudget = () => {
-    const data = getBudget()
-    setBudgetState(data)
-    setEditingMonthly(String(data.monthlyBudgets[currentMonth] || 0))
+    const data = getBudget();
+    setBudgetState(data);
+  };
 
-    const catBudgets: { [key: string]: string } = {}
-    DEFAULT_CATEGORIES.forEach(cat => {
-      catBudgets[cat.id] = String(data.categoryBudgets[cat.id] || 0)
-    })
-    setEditingCategories(catBudgets)
+  const changePeriod = (next: PeriodType) => {
+    setPeriod(next);
+    setOffset(0);
+  };
+
+  if (!mounted || !budget) {
+    return (
+      <Screen>
+        <div style={{ padding: 20, color: T.textSec }}>로딩 중...</div>
+      </Screen>
+    );
   }
 
-  const handleSave = () => {
-    if (!budget) return
+  const summary = getMonthlySummary(currentMonth);
 
-    const monthlyAmount = parseInt(editingMonthly) || 0
+  // Calculate totals
+  const monthlyTotal = Object.values(budget.categoryBudgets).reduce(
+    (a, v) => a + v,
+    0
+  );
+  const defaultGoal = (type: PeriodType) =>
+    type === 'year'
+      ? monthlyTotal * 12
+      : type === 'half'
+      ? monthlyTotal * 6
+      : type === 'quarter'
+      ? monthlyTotal * 3
+      : monthlyTotal;
 
-    const newBudget: Budget = {
-      ...budget,
-      annual: monthlyAmount * 12,
-      monthlyBudgets: {
-        ...budget.monthlyBudgets,
-        [currentMonth]: monthlyAmount,
-      },
-      categoryBudgets: Object.fromEntries(
-        Object.entries(editingCategories).map(([key, value]) => [key, parseInt(value) || 0])
-      ),
+  const goal = defaultGoal(period);
+  const info = periodInfo(period, offset);
+
+  // 실제 데이터에서 사용 금액 계산
+  const getUsedAmount = (): number => {
+    if (period === 'year' && 'year' in info) {
+      return getYearlyTotal(info.year);
     }
+    if (period === 'half' && 'half' in info && 'year' in info) {
+      return getHalfYearTotal(info.year, info.half as 1 | 2);
+    }
+    if (period === 'quarter' && 'quarter' in info && 'year' in info) {
+      return getQuarterlyTotal(info.year, info.quarter as 1 | 2 | 3 | 4);
+    }
+    if (period === 'month' && 'monthKey' in info) {
+      return getMonthlyTotal(info.monthKey);
+    }
+    return 0;
+  };
 
-    saveBudget(newBudget)
-    setBudgetState(newBudget)
-    setIsEditing(false)
-  }
+  const used = getUsedAmount();
 
-  if (!budget) {
-    return <div className="p-4 text-gray-500">로딩 중...</div>
-  }
+  const periods = [
+    { id: 'year' as const, label: '연간' },
+    { id: 'half' as const, label: '반기' },
+    { id: 'quarter' as const, label: '분기' },
+    { id: 'month' as const, label: '월별' },
+  ];
 
-  const summary = getMonthlySummary(currentMonth)
-  const percentUsed = summary.totalBudget > 0 ? (summary.totalSpent / summary.totalBudget) * 100 : 0
+  const categories = DEFAULT_CATEGORIES.filter((c) => c.id !== 'other');
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      {/* 헤더 */}
-      <div className="bg-white p-4 border-b">
-        <div className="flex justify-between items-center">
-          <h1 className="text-xl font-bold text-gray-900">예산 설정</h1>
-          {!isEditing ? (
+    <Screen>
+      <AppHeader title="목표 · 예산" onBack={() => router.push('/')} />
+
+      {/* period selector */}
+      <div style={{ padding: '8px 20px 12px' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 6,
+            padding: 4,
+            background: T.bgMuted,
+            borderRadius: 12,
+          }}
+        >
+          {periods.map((p) => (
             <button
-              onClick={() => setIsEditing(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
+              key={p.id}
+              onClick={() => changePeriod(p.id)}
+              style={{
+                flex: 1,
+                border: period === p.id ? `2px solid ${T.accent}` : '2px solid transparent',
+                padding: '8px 0',
+                borderRadius: 8,
+                background: period === p.id ? T.bg : 'transparent',
+                fontFamily: 'Pretendard, system-ui, sans-serif',
+                fontSize: 13,
+                fontWeight: period === p.id ? 700 : 600,
+                color: period === p.id ? T.accent : T.textTer,
+                cursor: 'pointer',
+                letterSpacing: '-0.01em',
+                boxShadow:
+                  period === p.id ? '0 2px 6px rgba(0,0,0,0.1)' : 'none',
+                transition: 'all .15s',
+              }}
             >
-              수정
+              {p.label}
             </button>
-          ) : (
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setIsEditing(false)
-                  loadBudget()
-                }}
-                className="px-4 py-2 border border-gray-200 rounded-lg text-sm"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleSave}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
-              >
-                저장
-              </button>
-            </div>
-          )}
+          ))}
         </div>
       </div>
 
-      <div className="p-4 space-y-4">
-        {/* 이번 달 예산 요약 */}
-        <div className="card p-5">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <p className="text-gray-500 text-sm">{formatMonth(currentMonth)}</p>
-              {isEditing ? (
-                <div className="relative inline-block mt-1">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={editingMonthly}
-                    onChange={(e) => setEditingMonthly(e.target.value.replace(/[^0-9]/g, ''))}
-                    className="w-40 text-2xl font-bold text-right pr-8 py-1 border-b-2 border-blue-500 focus:outline-none"
-                  />
-                  <span className="absolute right-0 top-1/2 -translate-y-1/2 text-lg text-gray-400">원</span>
-                </div>
-              ) : (
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {formatCurrency(summary.totalBudget)}
-                </p>
-              )}
-            </div>
+      {/* period stepper */}
+      <div
+        style={{
+          padding: '0 20px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <StepBtn onClick={() => setOffset(offset - 1)} dir="prev" />
+        <div style={{ textAlign: 'center', flex: 1 }}>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: T.text,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            {info.short}
           </div>
-
-          {!isEditing && (
-            <>
-              {/* 진행 바 */}
-              <div className="mb-3">
-                <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all ${
-                      percentUsed > 100 ? 'bg-red-500' :
-                      percentUsed > 80 ? 'bg-yellow-500' : 'bg-blue-500'
-                    }`}
-                    style={{ width: `${Math.min(percentUsed, 100)}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* 사용/남은 금액 */}
-              <div className="flex justify-between text-sm">
-                <div>
-                  <span className="text-gray-500">사용</span>
-                  <span className="font-semibold ml-2">{formatCurrency(summary.totalSpent)}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">남음</span>
-                  <span className={`font-semibold ml-2 ${summary.remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    {formatCurrency(summary.remaining)}
-                  </span>
-                </div>
-              </div>
-            </>
+          {offset !== 0 && (
+            <button
+              onClick={() => setOffset(0)}
+              style={{
+                border: 0,
+                background: 'transparent',
+                cursor: 'pointer',
+                color: T.accent,
+                fontSize: 11,
+                fontWeight: 600,
+                padding: '2px 0',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              현재로 돌아가기
+            </button>
+          )}
+          {offset === 0 && (
+            <div
+              style={{
+                fontSize: 11,
+                color: T.textTer,
+                fontWeight: 500,
+                marginTop: 2,
+              }}
+            >
+              현재
+            </div>
           )}
         </div>
+        <StepBtn onClick={() => setOffset(offset + 1)} dir="next" />
+      </div>
 
-        {/* 카테고리별 예산 */}
-        <div className="card p-5">
-          <h2 className="font-bold text-gray-900 mb-4">카테고리별 예산</h2>
-          <div className="space-y-4">
-            {DEFAULT_CATEGORIES.filter(c => c.id !== 'other').map((cat) => {
-              const catBudget = budget.categoryBudgets[cat.id] || 0
-              const catSpent = summary.categoryBreakdown[cat.id]?.spent || 0
-              const catPercent = catBudget > 0 ? (catSpent / catBudget) * 100 : 0
+      <ScreenBody>
+        {/* Big goal card for selected period */}
+        <PeriodGoalCard info={info} goal={goal} used={used} />
 
-              return (
-                <div key={cat.id}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{cat.icon}</span>
-                      <span className="font-medium text-gray-900">{cat.name}</span>
+        {/* Category-level monthly budgets */}
+        {period === 'month' && (
+          <div style={{ padding: '8px 20px 16px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 8,
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.textTer }}>
+                {info.short.split(' ').slice(-1)[0]} 카테고리 예산
+              </div>
+              <button
+                onClick={() => setEditMode(!editMode)}
+                style={{
+                  border: 0,
+                  cursor: 'pointer',
+                  background: editMode ? T.accent : 'transparent',
+                  color: editMode ? '#fff' : T.accent,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: '-0.01em',
+                  padding: editMode ? '6px 12px' : '6px 0',
+                  borderRadius: 999,
+                  transition: 'all .15s',
+                }}
+              >
+                {editMode ? '완료' : '수정'}
+              </button>
+            </div>
+            <div
+              style={{
+                background: T.bg,
+                border: `1px solid ${editMode ? T.accent + '55' : T.divider}`,
+                borderRadius: 14,
+                overflow: 'hidden',
+                transition: 'border-color .15s',
+              }}
+            >
+              {categories.map((c, i) => (
+                <button
+                  key={c.id}
+                  onClick={() => {
+                    if (editMode) setEditing(c.id);
+                  }}
+                  disabled={!editMode}
+                  style={{
+                    width: '100%',
+                    border: 0,
+                    background: editMode ? T.accentSoft + '40' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '12px 14px',
+                    cursor: editMode ? 'pointer' : 'default',
+                    textAlign: 'left',
+                    borderBottom:
+                      i < categories.length - 1
+                        ? `1px solid ${editMode ? T.accent + '22' : T.divider}`
+                        : 'none',
+                    transition: 'background .15s, border-color .15s',
+                  }}
+                >
+                  <CatIcon catId={c.id} size={36} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 600,
+                        letterSpacing: '-0.01em',
+                      }}
+                    >
+                      {c.name}
                     </div>
-                    {isEditing ? (
-                      <div className="relative">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={editingCategories[cat.id] || ''}
-                          onChange={(e) => setEditingCategories({
-                            ...editingCategories,
-                            [cat.id]: e.target.value.replace(/[^0-9]/g, ''),
-                          })}
-                          className="w-28 text-right pr-6 py-1 text-sm border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                        />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">원</span>
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-500">
-                        {formatCurrency(catSpent)} / {formatCurrency(catBudget)}
-                      </span>
-                    )}
                   </div>
-
-                  {!isEditing && catBudget > 0 && (
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full transition-all ${cat.color}`}
-                        style={{ width: `${Math.min(catPercent, 100)}%` }}
-                      />
+                  <div style={{ textAlign: 'right', marginRight: editMode ? 4 : 0 }}>
+                    <div
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 700,
+                        color: T.textSec,
+                        fontVariantNumeric: 'tabular-nums',
+                        letterSpacing: '-0.02em',
+                      }}
+                    >
+                      {((budget.categoryBudgets[c.id] || 0) / 10000).toFixed(0)}
+                      만원
                     </div>
+                  </div>
+                  {editMode && (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 14 14"
+                      fill="none"
+                      style={{ flexShrink: 0 }}
+                    >
+                      <path
+                        d="M9.5 1.5l3 3-8 8H1.5v-3l8-8z"
+                        stroke={T.accent}
+                        strokeWidth="1.6"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+                </button>
+              ))}
+            </div>
 
-        {/* 예산 팁 */}
-        {!isEditing && (
-          <div className="p-4 bg-blue-50 rounded-xl">
-            <p className="text-sm text-blue-700">
-              💡 <strong>팁:</strong> 카테고리별 예산을 설정하면 지출 패턴을 더 잘 관리할 수 있어요!
-            </p>
+            {editMode && (
+              <div
+                style={{
+                  marginTop: 10,
+                  fontSize: 12,
+                  color: T.textTer,
+                  lineHeight: 1.5,
+                  padding: '0 4px',
+                }}
+              >
+                수정할 카테고리를 탭하세요.
+              </div>
+            )}
           </div>
         )}
+
+        <div style={{ padding: '0 20px 8px' }}>
+          <SecondaryButton onClick={() => router.push('/')}>저장</SecondaryButton>
+        </div>
+      </ScreenBody>
+
+      {editing && (
+        <CategoryBudgetSheet
+          cat={DEFAULT_CATEGORIES.find((c) => c.id === editing)!}
+          value={budget.categoryBudgets[editing] || 0}
+          onClose={() => setEditing(null)}
+          onSave={(v) => {
+            const newBudget = {
+              ...budget,
+              categoryBudgets: { ...budget.categoryBudgets, [editing]: v },
+            };
+            saveBudget(newBudget);
+            setBudgetState(newBudget);
+            setEditing(null);
+          }}
+        />
+      )}
+    </Screen>
+  );
+}
+
+// ◀ / ▶ stepper buttons
+function StepBtn({
+  onClick,
+  dir,
+}: {
+  onClick: () => void;
+  dir: 'prev' | 'next';
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={dir === 'prev' ? '이전' : '다음'}
+      style={{
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        border: 0,
+        cursor: 'pointer',
+        background: T.bgSoft,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <svg
+        width="10"
+        height="14"
+        viewBox="0 0 10 14"
+        fill="none"
+        style={dir === 'next' ? undefined : { transform: 'rotate(180deg)' }}
+      >
+        <path
+          d="M2 1l6 6-6 6"
+          stroke={T.text}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
+// Hero card for the active period
+function PeriodGoalCard({
+  info,
+  goal,
+  used,
+}: {
+  info: { title: string; sub: string; short: string };
+  goal: number;
+  used: number;
+}) {
+  const pct = goal > 0 ? (used / goal) * 100 : 0;
+  const remaining = goal - used;
+
+  return (
+    <div style={{ padding: '0 20px 16px' }}>
+      <div
+        style={{
+          background: T.text,
+          color: '#fff',
+          borderRadius: 20,
+          padding: 22,
+        }}
+      >
+        {/* 헤더: 기간 + 사용률 */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 600, opacity: 0.8 }}>
+            {info.short}
+          </div>
+          <div
+            style={{
+              padding: '4px 10px',
+              borderRadius: 999,
+              background: pct > 100 ? 'rgba(252,165,165,0.3)' : 'rgba(134,239,172,0.3)',
+              fontSize: 13,
+              fontWeight: 700,
+              color: pct > 100 ? '#FCA5A5' : '#86EFAC',
+            }}
+          >
+            {pct.toFixed(0)}% 사용
+          </div>
+        </div>
+
+        {/* 메인: 사용 금액 */}
+        <div style={{ marginBottom: 6 }}>
+          <MoneyText value={used} size={36} weight={800} color="#fff" />
+        </div>
+
+        {/* 서브: 예산 중 */}
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            opacity: 0.7,
+            marginBottom: 16,
+          }}
+        >
+          예산 {formatWonShort(goal)} 중
+        </div>
+
+        {/* 프로그레스 바 */}
+        <div
+          style={{
+            height: 8,
+            background: 'rgba(255,255,255,0.16)',
+            borderRadius: 4,
+            overflow: 'hidden',
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: Math.min(100, pct) + '%',
+              background: pct > 100 ? '#FCA5A5' : '#86EFAC',
+              borderRadius: 4,
+            }}
+          />
+        </div>
+
+        {/* 남은 예산 */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          <span style={{ opacity: 0.6 }}>남은 예산</span>
+          <span style={{ color: remaining >= 0 ? '#86EFAC' : '#FCA5A5' }}>
+            {remaining >= 0 ? formatWonShort(remaining) : '-' + formatWonShort(Math.abs(remaining))}
+          </span>
+        </div>
       </div>
     </div>
-  )
+  );
+}
+
+// Bottom sheet to edit a single category's monthly budget.
+function CategoryBudgetSheet({
+  cat,
+  value,
+  onClose,
+  onSave,
+}: {
+  cat: { id: string; name: string; color: string };
+  value: number;
+  onClose: () => void;
+  onSave: (v: number) => void;
+}) {
+  const [v, setV] = useState(value);
+  const presets = [10, 20, 30, 50, 100];
+  const adjust = (delta: number) => setV(Math.max(0, v + delta));
+
+  const formatted = v.toLocaleString('ko-KR');
+  const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const digits = e.target.value.replace(/[^\d]/g, '');
+    setV(Math.max(0, Math.floor(Number(digits) || 0)));
+  };
+
+  return (
+    <BottomSheet
+      open
+      onClose={onClose}
+      title={`${cat.name} 월 예산`}
+      height="55%"
+    >
+      <div style={{ padding: '0 20px 24px' }}>
+        <div
+          style={{
+            padding: '20px 0',
+            textAlign: 'center',
+            borderBottom: `1px solid ${T.divider}`,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'center',
+              gap: 4,
+              fontVariantNumeric: 'tabular-nums',
+              maxWidth: '100%',
+            }}
+          >
+            <span
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                color: T.textSec,
+                flexShrink: 0,
+              }}
+            >
+              ₩
+            </span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={formatted}
+              onChange={onInputChange}
+              style={{
+                border: 0,
+                background: 'transparent',
+                textAlign: 'center',
+                fontFamily: 'Pretendard, system-ui, sans-serif',
+                fontSize: 30,
+                fontWeight: 800,
+                color: T.text,
+                letterSpacing: '-0.02em',
+                width: `${formatted.length}ch`,
+                minWidth: 80,
+                maxWidth: 240,
+                outline: 'none',
+                padding: 0,
+              }}
+            />
+            <span
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: T.textSec,
+                flexShrink: 0,
+              }}
+            >
+              원
+            </span>
+          </div>
+          <div
+            style={{
+              marginTop: 6,
+              fontSize: 13,
+              color: T.textTer,
+              fontWeight: 500,
+            }}
+          >
+            {v >= 10000 ? Math.floor(v / 10000) + '만원' : v.toLocaleString() + '원'}{' '}
+            / 월
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            padding: '20px 0 8px',
+            justifyContent: 'space-between',
+          }}
+        >
+          {[-50000, -10000, +10000, +50000].map((d) => (
+            <button
+              key={d}
+              onClick={() => adjust(d)}
+              style={{
+                flex: 1,
+                padding: '10px 0',
+                border: 0,
+                borderRadius: 10,
+                background: T.bgMuted,
+                color: T.text,
+                fontFamily: 'Pretendard, system-ui, sans-serif',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {d > 0 ? '+' : '−'}
+              {Math.abs(d) / 10000}만
+            </button>
+          ))}
+        </div>
+
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: T.textTer,
+            margin: '20px 0 8px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+          }}
+        >
+          빠른 설정
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {presets.map((p) => (
+            <button
+              key={p}
+              onClick={() => setV(p * 10000)}
+              style={{
+                border: 0,
+                padding: '8px 14px',
+                borderRadius: 999,
+                background: v === p * 10000 ? cat.color + '18' : T.bgSoft,
+                color: v === p * 10000 ? cat.color : T.text,
+                fontFamily: 'Pretendard, system-ui, sans-serif',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {p}만원
+            </button>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 24 }}>
+          <PrimaryButton onClick={() => onSave(v)}>저장</PrimaryButton>
+        </div>
+      </div>
+    </BottomSheet>
+  );
 }

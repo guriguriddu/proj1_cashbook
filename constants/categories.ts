@@ -6,7 +6,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'food',
     name: '식비',
     icon: '🍽️',
-    color: 'bg-orange-500',
+    color: '#F97316', // orange-500
     keywords: [
       '편의점', 'CU', 'GS25', 'GS 25', '세븐일레븐', '이마트24', '미니스톱',
       '배달의민족', '배민', '요기요', '쿠팡이츠', '땡겨요',
@@ -20,7 +20,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'cafe',
     name: '카페',
     icon: '☕',
-    color: 'bg-amber-600',
+    color: '#D97706', // amber-600
     keywords: [
       '스타벅스', '투썸', '투썸플레이스', '메가커피', '메가MGC', '이디야',
       '할리스', '빽다방', '커피빈', '폴바셋', '블루보틀', '카페',
@@ -32,7 +32,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'shopping',
     name: '쇼핑',
     icon: '🛍️',
-    color: 'bg-pink-500',
+    color: '#EC4899', // pink-500
     keywords: [
       '쿠팡', '네이버쇼핑', '네이버페이', '무신사', '올리브영', '다이소',
       'SSG', '11번가', 'G마켓', '옥션', '위메프', '티몬',
@@ -45,7 +45,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'transport',
     name: '교통비',
     icon: '🚗',
-    color: 'bg-blue-500',
+    color: '#3B82F6', // blue-500
     keywords: [
       '카카오T', '카카오택시', '택시', 'TAXI',
       '지하철', '버스', '교통카드', '티머니', '캐시비',
@@ -60,7 +60,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'fixed',
     name: '고정비',
     icon: '📋',
-    color: 'bg-slate-600',
+    color: '#475569', // slate-600
     keywords: [
       '월세', '관리비', '공과금', '전기세', '가스비', '수도세',
       '넷플릭스', '유튜브프리미엄', '스포티파이', '애플뮤직',
@@ -74,7 +74,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'telecom',
     name: '통신',
     icon: '📱',
-    color: 'bg-indigo-500',
+    color: '#6366F1', // indigo-500
     keywords: [
       'SKT', 'SK텔레콤', 'KT', 'LG U+', 'LG유플러스',
       '통신료', '핸드폰', '휴대폰', '인터넷', 'IPTV',
@@ -86,7 +86,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'insurance',
     name: '보험',
     icon: '🛡️',
-    color: 'bg-green-600',
+    color: '#16A34A', // green-600
     keywords: [
       '삼성생명', '삼성화재', '한화생명', '한화손해보험',
       '현대해상', '메리츠', 'KB손해보험', 'DB손해보험',
@@ -99,7 +99,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'education',
     name: '자기계발',
     icon: '📚',
-    color: 'bg-purple-500',
+    color: '#A855F7', // purple-500
     keywords: [
       '교보문고', '예스24', '알라딘', '반디앤루니스', '영풍문고',
       '클래스101', '인프런', '패스트캠퍼스', '노마드코더', '코드잇',
@@ -112,7 +112,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'travel',
     name: '여행',
     icon: '✈️',
-    color: 'bg-cyan-500',
+    color: '#06B6D4', // cyan-500
     keywords: [
       '대한항공', '아시아나', '제주항공', '진에어', '티웨이', '에어부산',
       '야놀자', '여기어때', '에어비앤비', 'airbnb', '호텔', '숙소', '펜션', '모텔',
@@ -125,7 +125,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'cash',
     name: '현금',
     icon: '💵',
-    color: 'bg-emerald-500',
+    color: '#10B981', // emerald-500
     keywords: [
       'ATM', '현금', '출금', '인출',
     ],
@@ -135,7 +135,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     id: 'other',
     name: '기타',
     icon: '📦',
-    color: 'bg-gray-500',
+    color: '#6B7280', // gray-500
     keywords: [], // 기본 카테고리
     order: 99,
   },

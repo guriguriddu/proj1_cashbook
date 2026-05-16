@@ -8,7 +8,7 @@ interface NavItem {
   id: string;
   href: string;
   label: string;
-  icon: 'home' | 'list' | 'plus' | 'target';
+  icon: 'home' | 'list' | 'plus' | 'target' | 'goal';
 }
 
 const navItems: NavItem[] = [
@@ -16,6 +16,7 @@ const navItems: NavItem[] = [
   { id: 'history', href: '/expenses', label: '내역', icon: 'list' },
   { id: 'add', href: '/add', label: '입력', icon: 'plus' },
   { id: 'budget', href: '/budget', label: '예산', icon: 'target' },
+  { id: 'goal', href: '/goal', label: '목표', icon: 'goal' },
 ];
 
 export default function BottomNav() {
@@ -119,6 +120,14 @@ function TabIcon({ icon, active }: { icon: string; active: boolean }) {
     );
   }
   if (icon === 'target') {
+    return (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <rect x="4" y="4" width="16" height="16" rx="2" stroke={c} strokeWidth={w} />
+        <path d="M8 12h8M12 8v8" stroke={c} strokeWidth={w} strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (icon === 'goal') {
     return (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <circle cx="12" cy="12" r="8.5" stroke={c} strokeWidth={w} />

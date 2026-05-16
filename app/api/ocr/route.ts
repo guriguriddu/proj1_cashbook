@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: {
@@ -33,6 +33,8 @@ export async function POST(request: NextRequest) {
                 {
                   text: `이 이미지는 카드 결제 내역 또는 토스 사용 내역 캡쳐입니다.
 이미지에서 모든 거래 내역을 추출하고 카테고리를 분류해주세요.
+
+중요: 날짜에 년도가 표시되어 있지 않으면 현재 년도인 ${new Date().getFullYear()}년으로 가정해주세요.
 
 카테고리 목록 (반드시 이 중에서 선택):
 - food: 식비 (음식점, 배달, 편의점, 마트 식품)
@@ -55,14 +57,13 @@ export async function POST(request: NextRequest) {
 ---
 
 예시:
-날짜: 2025-05-15
+날짜: ${new Date().getFullYear()}-05-15
 금액: 4500
 사용처: 스타벅스 강남역점
-카테고리: food
+카테고리: cafe
 ---
 
-계좌이체, 입금, 환불, 충전 등은 제외하고 실제 지출 내역만 추출해주세요.
-이미지에서 보이는 모든 거래를 빠짐없이 추출해주세요.`
+모든 거래 내역을 빠짐없이 추출해주세요. (계좌이체, 송금, 입금, 환불, 충전 등도 포함)`
                 },
                 {
                   inline_data: {
@@ -84,8 +85,17 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const errorData = await response.json()
       console.error('Gemini API 에러:', errorData)
+
+      // 에러 유형에 따른 메시지
+      let errorMessage = 'OCR 처리 실패'
+      if (errorData.error?.code === 429) {
+        errorMessage = 'API 요청 한도 초과 - 잠시 후 다시 시도해주세요'
+      } else if (errorData.error?.code === 503) {
+        errorMessage = '서버가 바쁩니다 - 잠시 후 다시 시도해주세요'
+      }
+
       return NextResponse.json(
-        { error: 'OCR 처리 실패', details: errorData },
+        { error: errorMessage, details: errorData },
         { status: response.status }
       )
     }

@@ -16,14 +16,40 @@ import {
   FieldRow,
   DatePicker,
 } from '@/components/ui';
-import { saveExpenses, generateId } from '@/lib/storage';
+import { saveExpenses, generateId, getExpenses } from '@/lib/storage';
 import { formatDateShort, groupByDate } from '@/lib/utils';
 import { DEFAULT_CATEGORIES, getCategoryById } from '@/constants/categories';
 import type { ExtractedTransaction, Expense } from '@/types';
 
 interface ReviewItem extends ExtractedTransaction {
   excluded: boolean;
+  isDuplicate?: boolean;      // 중복 의심 (추출 내 중복)
+  duplicateOf?: string;       // 중복 원본 ID
+  isExistingDuplicate?: boolean;  // DB에 이미 존재하는 내역
+  existingExpenseId?: string;     // 기존 DB 내역 ID
+  isCancellation?: boolean;   // 취소 내역
+  cancelledBy?: string;       // 이 결제를 취소한 내역 ID
+  cancels?: string;           // 이 취소가 상쇄하는 결제 ID
+  isPaymentTransfer?: boolean;    // 간편결제 충전/이체 내역
+  linkedPaymentId?: string;       // 연결된 실제 결제 ID
+  linkedTransferId?: string;      // 이 결제와 연결된 충전 ID
 }
+
+// 취소 관련 키워드
+const CANCEL_KEYWORDS = ['취소', '환불', '반품', '취소완료', '결제취소', '주문취소'];
+
+// 간편결제 충전 관련 키워드
+const PAYMENT_TRANSFER_KEYWORDS = [
+  '카카오페이', 'kakaopay', '카카오 페이',
+  '네이버페이', 'naverpay', '네이버 페이', 'npay',
+  '토스', 'toss', '토스머니',
+  '페이코', 'payco',
+  '삼성페이', 'samsung pay',
+  '애플페이', 'apple pay',
+];
+
+// 은행 이체 키워드
+const BANK_TRANSFER_KEYWORDS = ['이체', '송금', '충전', '입금'];
 
 export default function OCRReviewPage() {
   const router = useRouter();
@@ -31,6 +57,7 @@ export default function OCRReviewPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [batchEditDate, setBatchEditDate] = useState<string | null>(null); // 일괄 수정할 원래 날짜
+  const [showExitConfirm, setShowExitConfirm] = useState(false); // 뒤로가기 확인 모달
 
   useEffect(() => {
     setMounted(true);
@@ -38,9 +65,113 @@ export default function OCRReviewPage() {
     const stored = sessionStorage.getItem('ocrTransactions');
     if (stored) {
       const transactions: ExtractedTransaction[] = JSON.parse(stored);
-      setItems(transactions.map((t) => ({ ...t, excluded: t.isExcluded || false })));
+      // 기존 DB 데이터 가져오기
+      const existingExpenses = getExpenses();
+      const processedItems = processTransactions(transactions, existingExpenses);
+      setItems(processedItems);
     }
   }, []);
+
+  // 중복 및 취소 내역 감지
+  function processTransactions(transactions: ExtractedTransaction[], existingExpenses: Expense[]): ReviewItem[] {
+    const items: ReviewItem[] = transactions.map((t) => ({
+      ...t,
+      excluded: t.isExcluded || false,
+    }));
+
+    // 0. 기존 DB 데이터와 중복 확인
+    const existingKeys = new Set(
+      existingExpenses.map((e) => `${e.date}_${e.amount}_${e.merchant.trim().toLowerCase()}`)
+    );
+    items.forEach((item) => {
+      const key = `${item.date}_${item.amount}_${item.merchant.trim().toLowerCase()}`;
+      if (existingKeys.has(key)) {
+        item.isExistingDuplicate = true;
+        // 기존 내역 ID 찾기
+        const existingItem = existingExpenses.find(
+          (e) => e.date === item.date && e.amount === item.amount &&
+                 e.merchant.trim().toLowerCase() === item.merchant.trim().toLowerCase()
+        );
+        if (existingItem) {
+          item.existingExpenseId = existingItem.id;
+        }
+      }
+    });
+
+    // 1. 추출 내 중복 감지: 같은 날짜 + 같은 금액 + 같은 사용처
+    const seen = new Map<string, string>(); // key -> first item id
+    items.forEach((item) => {
+      const key = `${item.date}_${item.amount}_${item.merchant.trim().toLowerCase()}`;
+      if (seen.has(key)) {
+        item.isDuplicate = true;
+        item.duplicateOf = seen.get(key);
+      } else {
+        seen.set(key, item.id);
+      }
+    });
+
+    // 2. 취소 내역 감지
+    items.forEach((item) => {
+      const merchantLower = item.merchant.toLowerCase();
+      if (CANCEL_KEYWORDS.some((kw) => merchantLower.includes(kw))) {
+        item.isCancellation = true;
+      }
+    });
+
+    // 3. 결제-취소 매칭: 취소 내역과 같은 금액의 결제 내역 찾기
+    const cancellations = items.filter((i) => i.isCancellation && !i.excluded);
+    const payments = items.filter((i) => !i.isCancellation && !i.excluded);
+
+    cancellations.forEach((cancel) => {
+      // 같은 금액의 결제 내역 찾기 (취소보다 이전 날짜)
+      const matchingPayment = payments.find(
+        (p) =>
+          p.amount === cancel.amount &&
+          !p.cancelledBy && // 아직 매칭 안된 것
+          p.date <= cancel.date // 결제가 취소보다 먼저
+      );
+      if (matchingPayment) {
+        cancel.cancels = matchingPayment.id;
+        matchingPayment.cancelledBy = cancel.id;
+      }
+    });
+
+    // 4. 간편결제 충전/이체 감지
+    items.forEach((item) => {
+      const merchantLower = item.merchant.toLowerCase();
+      const hasPaymentKeyword = PAYMENT_TRANSFER_KEYWORDS.some((kw) =>
+        merchantLower.includes(kw.toLowerCase())
+      );
+      const hasTransferKeyword = BANK_TRANSFER_KEYWORDS.some((kw) =>
+        merchantLower.includes(kw.toLowerCase())
+      );
+
+      // 간편결제 서비스명 + 이체/충전 키워드가 있으면 충전으로 판단
+      if (hasPaymentKeyword && hasTransferKeyword) {
+        item.isPaymentTransfer = true;
+      }
+    });
+
+    // 5. 충전-결제 연결: 같은 금액의 충전과 결제를 연결
+    const transfers = items.filter((i) => i.isPaymentTransfer && !i.excluded);
+    const actualPayments = items.filter((i) => !i.isPaymentTransfer && !i.isCancellation && !i.excluded);
+
+    transfers.forEach((transfer) => {
+      // 같은 금액의 결제 내역 찾기 (충전 이후 날짜, 아직 연결 안된 것)
+      const matchingPayment = actualPayments.find(
+        (p) =>
+          p.amount === transfer.amount &&
+          !p.linkedTransferId && // 아직 매칭 안된 것
+          p.date >= transfer.date // 결제가 충전 이후
+      );
+      if (matchingPayment) {
+        transfer.linkedPaymentId = matchingPayment.id;
+        matchingPayment.linkedTransferId = transfer.id;
+      }
+    });
+
+    return items;
+  }
 
   if (!mounted) {
     return (
@@ -53,6 +184,13 @@ export default function OCRReviewPage() {
   const active = items.filter((i) => !i.excluded);
   const total = active.reduce((a, i) => a + i.amount, 0);
   const needsReviewCount = active.filter((i) => i.confidence && i.confidence < 0.8).length;
+
+  // 중복 및 취소 카운트
+  const duplicateCount = active.filter((i) => i.isDuplicate).length;
+  const existingDuplicateCount = active.filter((i) => i.isExistingDuplicate).length;
+  const cancelPairCount = active.filter((i) => i.cancelledBy || i.cancels).length;
+  const transferCount = active.filter((i) => i.isPaymentTransfer).length;
+  const linkedTransferCount = active.filter((i) => i.linkedPaymentId || i.linkedTransferId).length;
 
   // 날짜별 그룹핑
   const byDate: { [date: string]: ReviewItem[] } = {};
@@ -100,7 +238,16 @@ export default function OCRReviewPage() {
 
   return (
     <Screen>
-      <AppHeader title="추출 결과 검수" onBack={() => router.push('/add/photo')} />
+      <AppHeader
+        title="추출 결과 검수"
+        onBack={() => {
+          if (items.length > 0) {
+            setShowExitConfirm(true);
+          } else {
+            router.push('/add/photo');
+          }
+        }}
+      />
 
       <ScreenBody padBottom={120}>
         {/* 요약 배너 */}
@@ -128,34 +275,130 @@ export default function OCRReviewPage() {
               </span>
             </div>
             <MoneyText value={total} size={26} weight={800} color="#0F5132" />
-            {needsReviewCount > 0 && (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  background: 'rgba(245,158,11,0.16)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: '#92400E',
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14">
-                  <path
-                    d="M7 1l6.5 11.5h-13L7 1zM7 5.5v3M7 10.5v.5"
-                    stroke="#92400E"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                  />
-                </svg>
-                {needsReviewCount}건은 카테고리를 확인해주세요
-              </div>
-            )}
+            {/* 경고 메시지들 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+              {existingDuplicateCount > 0 && (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(59,130,246,0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#2563EB',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14">
+                    <circle cx="7" cy="7" r="6" stroke="#2563EB" strokeWidth="1.4" fill="none" />
+                    <path d="M7 4v4M7 10v.5" stroke="#2563EB" strokeWidth="1.4" strokeLinecap="round" />
+                  </svg>
+                  {existingDuplicateCount}건 이미 저장된 내역 - 중복 확인 필요
+                </div>
+              )}
+              {duplicateCount > 0 && (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(239,68,68,0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#DC2626',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14">
+                    <path
+                      d="M7 1l6.5 11.5h-13L7 1zM7 5.5v3M7 10.5v.5"
+                      stroke="#DC2626"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      fill="none"
+                    />
+                  </svg>
+                  {duplicateCount}건 중복 의심 - 확인 후 제외해주세요
+                </div>
+              )}
+              {cancelPairCount > 0 && (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(168,85,247,0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#7C3AED',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14">
+                    <path
+                      d="M9 5L5 9M5 5l4 4"
+                      stroke="#7C3AED"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                    />
+                    <circle cx="7" cy="7" r="6" stroke="#7C3AED" strokeWidth="1.4" fill="none" />
+                  </svg>
+                  {cancelPairCount}건 취소/환불 매칭 - 둘 다 제외 권장
+                </div>
+              )}
+              {linkedTransferCount > 0 && (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(16,185,129,0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#059669',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14">
+                    <path d="M3 7h8M8 4l3 3-3 3" stroke="#059669" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  </svg>
+                  {linkedTransferCount / 2}건 충전→결제 연결 - 충전 제외 권장
+                </div>
+              )}
+              {needsReviewCount > 0 && (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(245,158,11,0.16)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#92400E',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14">
+                    <path
+                      d="M7 1l6.5 11.5h-13L7 1zM7 5.5v3M7 10.5v.5"
+                      stroke="#92400E"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      fill="none"
+                    />
+                  </svg>
+                  {needsReviewCount}건 카테고리 확인 필요
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -377,6 +620,123 @@ export default function OCRReviewPage() {
           onApply={(newDate) => batchUpdateDate(batchEditDate, newDate)}
         />
       )}
+
+      {/* 뒤로가기 확인 모달 */}
+      {showExitConfirm && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => setShowExitConfirm(false)}
+        >
+          <div
+            style={{
+              background: T.bg,
+              borderRadius: 20,
+              padding: '24px 20px 20px',
+              width: '100%',
+              maxWidth: 320,
+              textAlign: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                background: 'rgba(245,158,11,0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+              }}
+            >
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                <path
+                  d="M14 3L25 24H3L14 3Z"
+                  stroke="#F59E0B"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                  fill="none"
+                />
+                <path
+                  d="M14 11v5M14 19v1"
+                  stroke="#F59E0B"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                marginBottom: 8,
+                letterSpacing: '-0.02em',
+              }}
+            >
+              페이지를 나가시겠어요?
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                color: T.textSec,
+                lineHeight: 1.5,
+                marginBottom: 24,
+              }}
+            >
+              추출된 {items.filter(i => !i.excluded).length}건의 내역이
+              <br />
+              저장되지 않고 사라져요
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setShowExitConfirm(false)}
+                style={{
+                  flex: 1,
+                  padding: '14px 0',
+                  border: 0,
+                  borderRadius: 12,
+                  background: T.bgMuted,
+                  color: T.text,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                계속 검수
+              </button>
+              <button
+                onClick={() => {
+                  sessionStorage.removeItem('ocrTransactions');
+                  router.push('/add/photo');
+                }}
+                style={{
+                  flex: 1,
+                  padding: '14px 0',
+                  border: 0,
+                  borderRadius: 12,
+                  background: T.danger,
+                  color: '#fff',
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                나가기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Screen>
   );
 }
@@ -402,6 +762,20 @@ function OCRRow({
 }) {
   const category = getCategoryById(item.suggestedCategory);
   const needsReview = item.confidence && item.confidence < 0.8;
+  const hasCancelMatch = item.cancelledBy || item.cancels;
+  const hasDuplicateIssue = item.isExistingDuplicate || item.isDuplicate;
+  const hasTransferLink = item.isPaymentTransfer || item.linkedTransferId;
+
+  // 배경색 및 테두리 결정
+  let bgColor = 'transparent';
+  let borderColor = 'transparent';
+  if (hasDuplicateIssue) {
+    bgColor = 'rgba(239,68,68,0.06)';
+    borderColor = '#EF4444';
+  } else if (hasTransferLink) {
+    bgColor = 'rgba(16,185,129,0.06)';
+    borderColor = '#10B981';
+  }
 
   return (
     <div
@@ -411,8 +785,9 @@ function OCRRow({
         alignItems: 'center',
         gap: 12,
         padding: '12px 20px',
-        background: 'transparent',
+        background: bgColor,
         borderBottom: last ? 'none' : `1px solid ${T.divider}`,
+        borderLeft: `3px solid ${borderColor}`,
       }}
     >
       <button
@@ -452,7 +827,12 @@ function OCRRow({
             >
               {item.merchant}
             </div>
-            {needsReview && <Badge tone="warn" size="sm">확인 필요</Badge>}
+            {item.isExistingDuplicate && <Badge tone="blue" size="sm">기존</Badge>}
+            {item.isDuplicate && !item.isExistingDuplicate && <Badge tone="danger" size="sm">중복</Badge>}
+            {hasCancelMatch && <Badge tone="purple" size="sm">{item.isCancellation ? '취소' : '취소됨'}</Badge>}
+            {item.isPaymentTransfer && <Badge tone="accent" size="sm">충전</Badge>}
+            {item.linkedTransferId && <Badge tone="accent" size="sm">연결됨</Badge>}
+            {needsReview && !item.isDuplicate && !hasCancelMatch && !item.isExistingDuplicate && !item.isPaymentTransfer && <Badge tone="warn" size="sm">확인</Badge>}
           </div>
           <div
             style={{

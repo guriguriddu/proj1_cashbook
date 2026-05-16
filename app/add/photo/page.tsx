@@ -30,6 +30,7 @@ export default function PhotoUploadPage() {
   const [extracting, setExtracting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // 파일 선택 처리
   const onFiles = (files: FileList | null) => {
@@ -59,27 +60,68 @@ export default function PhotoUploadPage() {
     setImages(images.filter((i) => i.id !== id));
   };
 
+  // 부드러운 프로그레스 증가 함수
+  const smoothProgress = (from: number, to: number, duration: number) => {
+    const startTime = Date.now();
+    const step = () => {
+      const elapsed = Date.now() - startTime;
+      const ratio = Math.min(elapsed / duration, 1);
+      // easeOutQuad for smooth deceleration
+      const eased = 1 - (1 - ratio) * (1 - ratio);
+      const current = from + (to - from) * eased;
+      setProgress(Math.round(current));
+      if (ratio < 1) {
+        requestAnimationFrame(step);
+      }
+    };
+    requestAnimationFrame(step);
+  };
+
   // OCR 추출 시작
   const startExtract = async () => {
     if (images.length === 0) return;
 
     setExtracting(true);
     setProgress(0);
+    setError(null);
 
     const allTransactions: ExtractedTransaction[] = [];
+    const totalImages = images.filter(img => img.file).length;
+
+    // 각 이미지당 할당되는 진행률 (전체 90%, 마지막 10%는 파싱용)
+    const perImageProgress = 85 / totalImages;
+
+    let processedCount = 0;
 
     for (let i = 0; i < images.length; i++) {
       const img = images[i];
       if (!img.file) continue;
 
-      const handleProgress: OcrProgressCallback = (prog) => {
-        const baseProgress = (i / images.length) * 100;
-        const imageProgress = (prog / 100) * (100 / images.length);
-        setProgress(Math.round(baseProgress + imageProgress));
+      const baseProgress = processedCount * perImageProgress;
+
+      // 시작 애니메이션 (이미지 준비 중)
+      smoothProgress(baseProgress, baseProgress + perImageProgress * 0.1, 200);
+      await new Promise(r => setTimeout(r, 200));
+
+      const handleProgress: OcrProgressCallback = (prog, status) => {
+        // API 진행률을 해당 이미지 구간 내에서 세분화
+        // prog: 0-100을 baseProgress + 10% ~ baseProgress + 90% 구간에 매핑
+        const imageStart = baseProgress + perImageProgress * 0.1;
+        const imageEnd = baseProgress + perImageProgress * 0.9;
+        const mappedProgress = imageStart + (prog / 100) * (imageEnd - imageStart);
+        setProgress(Math.round(mappedProgress));
       };
 
       try {
         const ocrText = await performOcr(img.file, handleProgress);
+
+        // 파싱 진행 (90% → 100% of this image)
+        smoothProgress(
+          baseProgress + perImageProgress * 0.9,
+          baseProgress + perImageProgress,
+          150
+        );
+
         let extracted = parseGeminiResponse(ocrText);
         if (extracted.length === 0) {
           extracted = parseOcrText(ocrText);
@@ -87,15 +129,25 @@ export default function PhotoUploadPage() {
         allTransactions.push(...extracted);
       } catch (error) {
         console.error(`이미지 ${i + 1} OCR 실패:`, error);
+        const errorMessage = error instanceof Error ? error.message : 'OCR 처리 실패';
+        setError(errorMessage);
+        setExtracting(false);
+        return;
       }
+
+      processedCount++;
     }
 
-    setProgress(100);
+    // 최종 정리 단계 (85% → 100%)
+    smoothProgress(85, 95, 200);
+    await new Promise(r => setTimeout(r, 200));
 
     // 추출된 데이터를 sessionStorage에 저장하고 리뷰 페이지로 이동
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('ocrTransactions', JSON.stringify(allTransactions));
     }
+
+    smoothProgress(95, 100, 150);
 
     setTimeout(() => {
       router.push('/add/photo/review');
@@ -269,6 +321,26 @@ export default function PhotoUploadPage() {
         >
           ※ 업로드한 이미지는 인식 후 안전하게 삭제됩니다. 인식이 어려운 경우 일부 항목을 직접 수정하셔야 할 수 있어요.
         </div>
+
+        {/* 에러 메시지 */}
+        {error && (
+          <div
+            style={{
+              margin: '16px 20px',
+              padding: '14px 16px',
+              background: T.dangerSoft,
+              borderRadius: 12,
+              border: `1px solid ${T.danger}20`,
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600, color: T.danger, marginBottom: 4 }}>
+              OCR 처리 실패
+            </div>
+            <div style={{ fontSize: 13, color: T.danger, opacity: 0.85 }}>
+              {error}
+            </div>
+          </div>
+        )}
       </ScreenBody>
 
       {/* 하단 고정 버튼 - 탭 바 위에 위치 */}

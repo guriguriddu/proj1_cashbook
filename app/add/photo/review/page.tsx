@@ -16,7 +16,7 @@ import {
   FieldRow,
   DatePicker,
 } from '@/components/ui';
-import { saveExpenses, generateId, getExpenses } from '@/lib/storage';
+import { saveExpenses, generateId, getExpenses } from '@/lib/supabase-storage';
 import { formatDateShort, groupByDate } from '@/lib/utils';
 import { DEFAULT_CATEGORIES, getCategoryById } from '@/constants/categories';
 import type { ExtractedTransaction, Expense } from '@/types';
@@ -61,15 +61,18 @@ export default function OCRReviewPage() {
 
   useEffect(() => {
     setMounted(true);
-    // sessionStorage에서 추출된 데이터 로드
-    const stored = sessionStorage.getItem('ocrTransactions');
-    if (stored) {
-      const transactions: ExtractedTransaction[] = JSON.parse(stored);
-      // 기존 DB 데이터 가져오기
-      const existingExpenses = getExpenses();
-      const processedItems = processTransactions(transactions, existingExpenses);
-      setItems(processedItems);
-    }
+    const loadData = async () => {
+      // sessionStorage에서 추출된 데이터 로드
+      const stored = sessionStorage.getItem('ocrTransactions');
+      if (stored) {
+        const transactions: ExtractedTransaction[] = JSON.parse(stored);
+        // 기존 DB 데이터 가져오기
+        const existingExpenses = await getExpenses();
+        const processedItems = processTransactions(transactions, existingExpenses);
+        setItems(processedItems);
+      }
+    };
+    loadData();
   }, []);
 
   // 중복 및 취소 내역 감지
@@ -214,7 +217,7 @@ export default function OCRReviewPage() {
   };
 
   // 저장
-  const handleSave = () => {
+  const handleSave = async () => {
     const expensesToSave: Expense[] = active.map((t) => ({
       id: generateId(),
       date: t.date,
@@ -231,7 +234,7 @@ export default function OCRReviewPage() {
       return;
     }
 
-    saveExpenses(expensesToSave);
+    await saveExpenses(expensesToSave);
     sessionStorage.removeItem('ocrTransactions');
     router.push('/');
   };

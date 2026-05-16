@@ -14,12 +14,10 @@ import {
   PrimaryButton,
 } from '@/components/ui';
 import {
-  getExpensesByMonth,
-  deleteExpense,
   getCurrentMonth,
-  getBudget,
-  updateExpense,
-} from '@/lib/storage';
+} from '@/lib/supabase-storage';
+import { useExpensesByMonth, useBudget } from '@/hooks/useSupabaseData';
+import * as storage from '@/lib/supabase-storage';
 import { formatDateShort } from '@/lib/utils';
 import { DEFAULT_CATEGORIES, getCategoryById } from '@/constants/categories';
 import type { Expense } from '@/types';
@@ -56,43 +54,20 @@ function ExpensesContent() {
   const [sort, setSort] = useState<'date' | 'amount'>('date');
   const [month, setMonth] = useState(getCurrentMonth());
   const [monthSheetOpen, setMonthSheetOpen] = useState(false);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const { expenses, loading: expensesLoading, refresh: refreshExpenses } = useExpensesByMonth(month);
+  const { budget, loading: budgetLoading } = useBudget();
 
-  useEffect(() => {
-    loadExpenses();
-  }, [month]);
+  const loading = expensesLoading || budgetLoading;
 
-  const loadExpenses = () => {
-    const data = getExpensesByMonth(month);
-    setExpenses(data);
-  };
-
-  if (!mounted) {
+  if (loading || !budget) {
     return (
       <Screen>
         <div style={{ padding: 20, color: T.textSec }}>로딩 중...</div>
       </Screen>
     );
   }
-
-  const budget = getBudget();
-
-  // 전월 데이터 가져오기
-  const getPrevMonth = (m: string) => {
-    const [y, mm] = m.split('-').map(Number);
-    if (mm === 1) {
-      return `${y - 1}-12`;
-    }
-    return `${y}-${String(mm - 1).padStart(2, '0')}`;
-  };
-  const prevMonth = getPrevMonth(month);
-  const prevExpenses = getExpensesByMonth(prevMonth);
 
   // Filter expenses to the selected month, then by category.
   const monthExpenses = expenses;
@@ -148,25 +123,17 @@ function ExpensesContent() {
   const catBudget = catData ? budget.categoryBudgets[catData.id] || 0 : 0;
   const catPct = catBudget > 0 ? (total / catBudget) * 100 : 0;
 
-  // 전월 대비 계산
-  const prevFiltered = prevExpenses.filter(
-    (e) => filterCat === 'all' || e.category === filterCat
-  );
-  const prevTotal = prevFiltered.reduce((a, e) => a + e.amount, 0);
-  const diff = total - prevTotal;
-  const diffPct = prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : 0;
-
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('이 지출 내역을 삭제하시겠습니까?')) {
-      deleteExpense(id);
-      loadExpenses();
+      await storage.deleteExpense(id);
+      refreshExpenses();
     }
   };
 
-  const handleSaveEdit = (updated: Expense) => {
-    updateExpense(updated.id, updated);
+  const handleSaveEdit = async (updated: Expense) => {
+    await storage.updateExpense(updated.id, updated);
     setEditingExpense(null);
-    loadExpenses();
+    refreshExpenses();
   };
 
   return (
@@ -265,39 +232,6 @@ function ExpensesContent() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <MoneyText value={total} size={28} weight={800} />
-          {prevTotal > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 3,
-                padding: '4px 8px',
-                borderRadius: 6,
-                background: diff > 0 ? 'rgba(239,68,68,0.1)' : diff < 0 ? 'rgba(34,197,94,0.1)' : T.bgMuted,
-                fontSize: 12,
-                fontWeight: 600,
-                color: diff > 0 ? '#EF4444' : diff < 0 ? '#22C55E' : T.textTer,
-              }}
-            >
-              {diff > 0 ? (
-                <svg width="10" height="10" viewBox="0 0 10 10">
-                  <path d="M5 2v6M2 5l3-3 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                </svg>
-              ) : diff < 0 ? (
-                <svg width="10" height="10" viewBox="0 0 10 10">
-                  <path d="M5 2v6M2 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                </svg>
-              ) : null}
-              {diff !== 0 && (
-                <span>
-                  {Math.abs(diff) >= 10000
-                    ? `${(Math.abs(diff) / 10000).toFixed(1)}만`
-                    : formatWon(Math.abs(diff))}
-                </span>
-              )}
-              {diff === 0 && <span>전월 동일</span>}
-            </div>
-          )}
         </div>
 
         {/* 전체 예산 대비 사용률 */}

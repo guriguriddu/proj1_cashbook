@@ -14,15 +14,10 @@ import {
   PrimaryButton,
 } from '@/components/ui';
 import {
-  getBudget,
-  saveBudget,
   getCurrentMonth,
-  getMonthlySummary,
-  getMonthlyTotal,
-  getQuarterlyTotal,
-  getHalfYearTotal,
-  getYearlyTotal,
-} from '@/lib/storage';
+} from '@/lib/supabase-storage';
+import * as storage from '@/lib/supabase-storage';
+import { useBudget } from '@/hooks/useSupabaseData';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
 import type { Budget } from '@/types';
 
@@ -88,39 +83,47 @@ function formatWonShort(amount: number): string {
 
 export default function BudgetPage() {
   const router = useRouter();
-  const [budget, setBudgetState] = useState<Budget | null>(null);
+  const { budget, loading: budgetLoading, refresh: refreshBudget } = useBudget();
   const [period, setPeriod] = useState<PeriodType>('month');
   const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [used, setUsed] = useState(0);
 
   const currentMonth = getCurrentMonth();
-
-  useEffect(() => {
-    setMounted(true);
-    loadBudget();
-  }, []);
-
-  const loadBudget = () => {
-    const data = getBudget();
-    setBudgetState(data);
-  };
 
   const changePeriod = (next: PeriodType) => {
     setPeriod(next);
     setOffset(0);
   };
 
-  if (!mounted || !budget) {
+  // 사용 금액 계산 (비동기)
+  const info = periodInfo(period, offset);
+
+  useEffect(() => {
+    const loadUsed = async () => {
+      let total = 0;
+      if (period === 'year' && 'year' in info) {
+        total = await storage.getYearlyTotal(info.year);
+      } else if (period === 'half' && 'half' in info && 'year' in info) {
+        total = await storage.getHalfYearTotal(info.year, info.half as 1 | 2);
+      } else if (period === 'quarter' && 'quarter' in info && 'year' in info) {
+        total = await storage.getQuarterlyTotal(info.year, info.quarter as 1 | 2 | 3 | 4);
+      } else if (period === 'month' && 'monthKey' in info && info.monthKey) {
+        total = await storage.getMonthlyTotal(info.monthKey);
+      }
+      setUsed(total);
+    };
+    loadUsed();
+  }, [period, offset]);
+
+  if (budgetLoading || !budget) {
     return (
       <Screen>
         <div style={{ padding: 20, color: T.textSec }}>로딩 중...</div>
       </Screen>
     );
   }
-
-  const summary = getMonthlySummary(currentMonth);
 
   // Calculate totals
   const monthlyTotal = Object.values(budget.categoryBudgets).reduce(
@@ -137,26 +140,6 @@ export default function BudgetPage() {
       : monthlyTotal;
 
   const goal = defaultGoal(period);
-  const info = periodInfo(period, offset);
-
-  // 실제 데이터에서 사용 금액 계산
-  const getUsedAmount = (): number => {
-    if (period === 'year' && 'year' in info) {
-      return getYearlyTotal(info.year);
-    }
-    if (period === 'half' && 'half' in info && 'year' in info) {
-      return getHalfYearTotal(info.year, info.half as 1 | 2);
-    }
-    if (period === 'quarter' && 'quarter' in info && 'year' in info) {
-      return getQuarterlyTotal(info.year, info.quarter as 1 | 2 | 3 | 4);
-    }
-    if (period === 'month' && 'monthKey' in info && info.monthKey) {
-      return getMonthlyTotal(info.monthKey);
-    }
-    return 0;
-  };
-
-  const used = getUsedAmount();
 
   const periods = [
     { id: 'year' as const, label: '연간' },
@@ -404,13 +387,13 @@ export default function BudgetPage() {
           cat={DEFAULT_CATEGORIES.find((c) => c.id === editing)!}
           value={budget.categoryBudgets[editing] || 0}
           onClose={() => setEditing(null)}
-          onSave={(v) => {
+          onSave={async (v) => {
             const newBudget = {
               ...budget,
               categoryBudgets: { ...budget.categoryBudgets, [editing]: v },
             };
-            saveBudget(newBudget);
-            setBudgetState(newBudget);
+            await storage.saveBudget(newBudget);
+            refreshBudget();
             setEditing(null);
           }}
         />

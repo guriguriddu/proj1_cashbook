@@ -11,7 +11,7 @@ import {
   ProgressBar,
 } from '@/components/ui';
 import { performOcr, parseGeminiResponse, parseOcrText, OcrProgressCallback } from '@/lib/ocr';
-import { generateId } from '@/lib/storage';
+import { generateId } from '@/lib/supabase-storage';
 import type { ExtractedTransaction } from '@/types';
 
 interface ImagePreview {

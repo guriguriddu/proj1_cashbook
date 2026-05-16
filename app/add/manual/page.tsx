@@ -12,7 +12,7 @@ import {
   BottomSheet,
   CatIcon,
 } from '@/components/ui';
-import { saveExpense, generateId, getTodayDate } from '@/lib/storage';
+import { saveExpense, generateId, getTodayDate } from '@/lib/supabase-storage';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
 import type { Expense } from '@/types';
 
@@ -41,7 +41,7 @@ export default function ManualAddPage() {
 
   const canSave = amount > 0 && merchant.trim().length > 0;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const expense: Expense = {
       id: generateId(),
       date,
@@ -52,7 +52,7 @@ export default function ManualAddPage() {
       createdAt: new Date().toISOString(),
       source: 'manual',
     };
-    saveExpense(expense);
+    await saveExpense(expense);
     router.push('/');
   };
 

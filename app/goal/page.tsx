@@ -11,7 +11,7 @@ import {
   PrimaryButton,
   ProgressBar,
 } from '@/components/ui';
-import { getBudget } from '@/lib/storage';
+import { useBudget } from '@/hooks/useSupabaseData';
 
 // 금액 포맷 함수
 function formatWon(n: number): string {
@@ -30,7 +30,7 @@ function formatGoalAmount(n: number): string {
 
 export default function GoalPage() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const { budget, loading: budgetLoading } = useBudget();
 
   // 목표 설정 상태
   const [monthlyIncome, setMonthlyIncome] = useState(4_000_000);
@@ -38,24 +38,15 @@ export default function GoalPage() {
   const [currentAssets, setCurrentAssets] = useState(0);
   const [targetMonths, setTargetMonths] = useState(36);
 
-  // 예산에서 가져오기
-  const [monthlyBudget, setMonthlyBudget] = useState(2_300_000);
-  const [savingsInvestmentBudget, setSavingsInvestmentBudget] = useState(500_000);
-
   // 편집 상태
   const [editing, setEditing] = useState<string | null>(null);
   const [goalSheetOpen, setGoalSheetOpen] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-    const budget = getBudget();
-    if (budget) {
-      const total = Object.values(budget.categoryBudgets).reduce((a, v) => a + v, 0);
-      const finance = budget.categoryBudgets['finance'] || 0;
-      setMonthlyBudget(total - finance);
-      setSavingsInvestmentBudget(finance);
-    }
-  }, []);
+  // 예산에서 계산
+  const totalBudget = budget ? Object.values(budget.categoryBudgets).reduce((a, v) => a + v, 0) : 0;
+  const finance = budget ? (budget.categoryBudgets['finance'] || 0) : 0;
+  const monthlyBudget = totalBudget - finance;
+  const savingsInvestmentBudget = finance;
 
   // 계산된 값들
   const yearlyIncome = monthlyIncome * 12;
@@ -163,7 +154,7 @@ export default function GoalPage() {
     },
   };
 
-  if (!mounted) {
+  if (budgetLoading) {
     return (
       <Screen>
         <div style={{ padding: 20, color: T.textSec }}>로딩 중...</div>

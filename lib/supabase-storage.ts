@@ -175,6 +175,11 @@ export async function updateExpense(
   updates: Partial<Expense>
 ): Promise<void> {
   const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error('Not authenticated');
 
   const updateData: Record<string, unknown> = {};
   if (updates.date !== undefined) updateData.date = updates.date;
@@ -186,7 +191,8 @@ export async function updateExpense(
   const { error } = await supabase
     .from('expenses')
     .update(updateData)
-    .eq('id', id);
+    .eq('id', id)
+    .eq('user_id', user.id);
 
   if (error) {
     console.error('Error updating expense:', error);
@@ -196,7 +202,17 @@ export async function updateExpense(
 
 export async function deleteExpense(id: string): Promise<void> {
   const supabase = getSupabase();
-  const { error } = await supabase.from('expenses').delete().eq('id', id);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('expenses')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', user.id);
 
   if (error) {
     console.error('Error deleting expense:', error);

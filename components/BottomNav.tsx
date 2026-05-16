@@ -8,7 +8,7 @@ interface NavItem {
   id: string;
   href: string;
   label: string;
-  icon: 'home' | 'list' | 'plus' | 'target' | 'goal';
+  icon: 'home' | 'list' | 'plus' | 'target' | 'user';
 }
 
 const navItems: NavItem[] = [
@@ -16,7 +16,7 @@ const navItems: NavItem[] = [
   { id: 'history', href: '/expenses', label: '내역', icon: 'list' },
   { id: 'add', href: '/add', label: '입력', icon: 'plus' },
   { id: 'budget', href: '/budget', label: '예산', icon: 'target' },
-  { id: 'goal', href: '/goal', label: '목표', icon: 'goal' },
+  { id: 'mypage', href: '/mypage', label: 'MY', icon: 'user' },
 ];
 
 export default function BottomNav() {
@@ -127,12 +127,16 @@ function TabIcon({ icon, active }: { icon: string; active: boolean }) {
       </svg>
     );
   }
-  if (icon === 'goal') {
+  if (icon === 'user') {
     return (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="8.5" stroke={c} strokeWidth={w} />
-        <circle cx="12" cy="12" r="4" stroke={c} strokeWidth={w} />
-        <circle cx="12" cy="12" r="1.2" fill={c} />
+        <circle cx="12" cy="8" r="4" stroke={c} strokeWidth={w} />
+        <path
+          d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6"
+          stroke={c}
+          strokeWidth={w}
+          strokeLinecap="round"
+        />
       </svg>
     );
   }

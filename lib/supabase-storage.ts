@@ -88,9 +88,16 @@ export function getCurrentYear(): number {
 
 export async function getExpenses(): Promise<Expense[]> {
   const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return [];
+
   const { data, error } = await supabase
     .from('expenses')
     .select('*')
+    .eq('user_id', user.id)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -199,12 +206,19 @@ export async function deleteExpense(id: string): Promise<void> {
 
 export async function getExpensesByMonth(month: string): Promise<Expense[]> {
   const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return [];
+
   const startDate = `${month}-01`;
   const endDate = `${month}-31`;
 
   const { data, error } = await supabase
     .from('expenses')
     .select('*')
+    .eq('user_id', user.id)
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: false });
@@ -231,9 +245,16 @@ export async function getExpensesByDateRange(
   endDate: string
 ): Promise<Expense[]> {
   const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return [];
+
   const { data, error } = await supabase
     .from('expenses')
     .select('*')
+    .eq('user_id', user.id)
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: false });
@@ -259,11 +280,18 @@ export async function getExpensesByDateRange(
 
 export async function getBudget(): Promise<Budget> {
   const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return createDefaultBudget();
+
   const year = getCurrentYear();
 
   const { data: budgetData, error: budgetError } = await supabase
     .from('budgets')
     .select('*')
+    .eq('user_id', user.id)
     .eq('year', year)
     .single();
 
@@ -405,9 +433,16 @@ export async function getCategoryBudget(categoryId: string): Promise<number> {
 
 export async function getCategories(): Promise<Category[]> {
   const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return DEFAULT_CATEGORIES;
+
   const { data, error } = await supabase
     .from('categories')
     .select('*')
+    .eq('user_id', user.id)
     .order('sort_order', { ascending: true });
 
   if (error || !data || data.length === 0) {
@@ -458,9 +493,18 @@ export async function saveCategories(categories: Category[]): Promise<void> {
 
 export async function getSettings(): Promise<AppSettings> {
   const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { defaultCategories: [], homeCategoryOrder: [], lastUpdated: '' };
+  }
+
   const { data, error } = await supabase
     .from('user_settings')
     .select('*')
+    .eq('user_id', user.id)
     .single();
 
   if (error || !data) {
@@ -518,9 +562,24 @@ export interface GoalSettings {
 
 export async function getGoalSettings(): Promise<GoalSettings> {
   const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      monthlyIncome: 0,
+      monthlyFixedExpense: 0,
+      currentAssets: 0,
+      goalAmount: 100000000,
+      goalMonths: 60,
+    };
+  }
+
   const { data, error } = await supabase
     .from('user_settings')
     .select('monthly_income, monthly_fixed_expense, current_assets, goal_amount, goal_months')
+    .eq('user_id', user.id)
     .single();
 
   if (error || !data) {

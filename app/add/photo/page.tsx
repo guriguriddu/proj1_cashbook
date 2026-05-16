@@ -11,7 +11,7 @@ import {
   ProgressBar,
 } from '@/components/ui';
 import { performOcr, parseGeminiResponse, parseOcrText, OcrProgressCallback } from '@/lib/ocr';
-import { generateId } from '@/lib/supabase-storage';
+import { generateId, uploadReceiptImage } from '@/lib/supabase-storage';
 import type { ExtractedTransaction } from '@/types';
 
 interface ImagePreview {
@@ -138,13 +138,29 @@ export default function PhotoUploadPage() {
       processedCount++;
     }
 
-    // 최종 정리 단계 (85% → 100%)
-    smoothProgress(85, 95, 200);
+    // 최종 정리 단계 (85% → 95%)
+    smoothProgress(85, 90, 200);
     await new Promise(r => setTimeout(r, 200));
 
-    // 추출된 데이터를 sessionStorage에 저장하고 리뷰 페이지로 이동
+    // 이미지를 Storage에 업로드 (90% → 95%)
+    const uploadedImagePaths: string[] = [];
+    for (const img of images) {
+      if (img.file) {
+        try {
+          const path = await uploadReceiptImage(img.file);
+          uploadedImagePaths.push(path);
+        } catch (err) {
+          console.error('이미지 업로드 실패:', err);
+          // 업로드 실패해도 계속 진행 (OCR 결과는 저장)
+        }
+      }
+    }
+    smoothProgress(90, 95, 150);
+
+    // 추출된 데이터와 이미지 경로를 sessionStorage에 저장하고 리뷰 페이지로 이동
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('ocrTransactions', JSON.stringify(allTransactions));
+      sessionStorage.setItem('uploadedImagePaths', JSON.stringify(uploadedImagePaths));
     }
 
     smoothProgress(95, 100, 150);

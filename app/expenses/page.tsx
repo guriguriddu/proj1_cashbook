@@ -15,6 +15,7 @@ import {
 } from '@/components/ui';
 import {
   getCurrentMonth,
+  getReceiptImageUrl,
 } from '@/lib/supabase-storage';
 import { useExpensesByMonth, useBudget } from '@/hooks/useSupabaseData';
 import * as storage from '@/lib/supabase-storage';
@@ -501,6 +502,16 @@ function ExpenseRow({ e, onClick }: { e: Expense; onClick: () => void }) {
           )}
           <span>·</span>
           <span>{e.source === 'ocr' ? 'OCR' : '직접입력'}</span>
+          {e.imageUrl && (
+            <>
+              <span>·</span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <rect x="1" y="2" width="10" height="8" rx="1.5" stroke={T.textTer} strokeWidth="1.2" />
+                <circle cx="4" cy="5.5" r="1" fill={T.textTer} />
+                <path d="M1.5 9l2.5-2.5 1.5 1 3-2.5 2 2" stroke={T.textTer} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
+            </>
+          )}
         </div>
       </div>
       <div
@@ -667,6 +678,15 @@ function EditExpenseSheet({
   const [merchant, setMerchant] = useState(expense.merchant);
   const [category, setCategory] = useState(expense.category);
   const [memo, setMemo] = useState(expense.memo);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+
+  // 이미지 URL 로드
+  useEffect(() => {
+    if (expense.imageUrl) {
+      getReceiptImageUrl(expense.imageUrl).then(setImageUrl);
+    }
+  }, [expense.imageUrl]);
 
   const handleSubmit = () => {
     onSave({
@@ -689,6 +709,62 @@ function EditExpenseSheet({
   return (
     <BottomSheet open onClose={onClose} title="지출 수정" height="85%">
       <div style={{ padding: '0 20px 24px' }}>
+        {/* 이미지 미리보기 */}
+        {imageUrl && (
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 13,
+                fontWeight: 600,
+                color: T.textSec,
+                marginBottom: 8,
+              }}
+            >
+              영수증 / 캡쳐
+            </label>
+            <button
+              onClick={() => setShowImageModal(true)}
+              style={{
+                width: '100%',
+                height: 120,
+                border: `1px solid ${T.divider}`,
+                borderRadius: 12,
+                overflow: 'hidden',
+                cursor: 'pointer',
+                background: T.bgSoft,
+                padding: 0,
+                position: 'relative',
+              }}
+            >
+              <img
+                src={imageUrl}
+                alt="영수증"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 8,
+                  right: 8,
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  background: 'rgba(0,0,0,0.6)',
+                  color: '#fff',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                탭하여 확대
+              </div>
+            </button>
+          </div>
+        )}
+
         {/* 금액 */}
         <div style={{ marginBottom: 16 }}>
           <label
@@ -890,6 +966,56 @@ function EditExpenseSheet({
           </div>
         </div>
       </div>
+
+      {/* 이미지 확대 모달 */}
+      {showImageModal && imageUrl && (
+        <div
+          onClick={() => setShowImageModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.9)',
+            zIndex: 2000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+        >
+          <button
+            onClick={() => setShowImageModal(false)}
+            style={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              border: 0,
+              background: 'rgba(255,255,255,0.2)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18">
+              <path d="M4 4l10 10M14 4l-10 10" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+          <img
+            src={imageUrl}
+            alt="영수증"
+            style={{
+              maxWidth: '100%',
+              maxHeight: '90vh',
+              objectFit: 'contain',
+              borderRadius: 8,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </BottomSheet>
   );
 }

@@ -18,6 +18,7 @@ interface ExpenseRow {
   memo: string;
   source: string;
   created_at: string;
+  image_url?: string;
 }
 
 interface CategoryRow {
@@ -115,6 +116,7 @@ export async function getExpenses(): Promise<Expense[]> {
     memo: e.memo || '',
     source: e.source as 'ocr' | 'manual',
     createdAt: e.created_at,
+    imageUrl: e.image_url,
   }));
 }
 
@@ -135,6 +137,7 @@ export async function saveExpense(expense: Expense): Promise<void> {
     category_id: expense.category,
     memo: expense.memo || '',
     source: expense.source || 'manual',
+    image_url: expense.imageUrl || null,
   });
 
   if (error) {
@@ -160,6 +163,7 @@ export async function saveExpenses(newExpenses: Expense[]): Promise<void> {
     category_id: e.category,
     memo: e.memo || '',
     source: e.source || 'manual',
+    image_url: e.imageUrl || null,
   }));
 
   const { error } = await supabase.from('expenses').insert(inserts);
@@ -253,6 +257,7 @@ export async function getExpensesByMonth(month: string): Promise<Expense[]> {
     memo: e.memo || '',
     source: e.source as 'ocr' | 'manual',
     createdAt: e.created_at,
+    imageUrl: e.image_url,
   }));
 }
 
@@ -289,6 +294,7 @@ export async function getExpensesByDateRange(
     memo: e.memo || '',
     source: e.source as 'ocr' | 'manual',
     createdAt: e.created_at,
+    imageUrl: e.image_url,
   }));
 }
 
@@ -771,4 +777,109 @@ export async function getSpendingStatus(
   if (spent < max * 0.9) return 'under';
   if (spent > max * 1.1) return 'over';
   return 'normal';
+}
+
+// ==================== 이미지 Storage ====================
+
+const RECEIPT_BUCKET = 'receipt-images';
+
+/**
+ * 영수증/캡쳐 이미지를 Supabase Storage에 업로드
+ * @param file - 업로드할 파일 (File 또는 Blob)
+ * @param fileName - 파일명 (선택, 기본값은 timestamp 기반)
+ * @returns 업로드된 이미지의 Storage 경로 (user_id/filename)
+ */
+export async function uploadReceiptImage(
+  file: File | Blob,
+  fileName?: string
+): Promise<string> {
+  const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error('Not authenticated');
+
+  // 파일명 생성: user_id/timestamp_random.확장자
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8);
+  const extension = file.type.split('/')[1] || 'jpg';
+  const finalFileName = fileName || `${timestamp}_${random}.${extension}`;
+  const filePath = `${user.id}/${finalFileName}`;
+
+  const { error } = await supabase.storage
+    .from(RECEIPT_BUCKET)
+    .upload(filePath, file, {
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (error) {
+    console.error('Error uploading image:', error);
+    throw error;
+  }
+
+  return filePath;
+}
+
+/**
+ * Storage 경로로부터 서명된 URL 생성 (1시간 유효)
+ * @param filePath - Storage 경로 (user_id/filename)
+ * @returns 서명된 URL
+ */
+export async function getReceiptImageUrl(filePath: string): Promise<string | null> {
+  if (!filePath) return null;
+
+  const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  // 보안: 자신의 이미지만 접근 가능
+  if (!filePath.startsWith(user.id)) {
+    console.error('Unauthorized access to image');
+    return null;
+  }
+
+  const { data, error } = await supabase.storage
+    .from(RECEIPT_BUCKET)
+    .createSignedUrl(filePath, 3600); // 1시간
+
+  if (error) {
+    console.error('Error getting signed URL:', error);
+    return null;
+  }
+
+  return data?.signedUrl || null;
+}
+
+/**
+ * Storage에서 이미지 삭제
+ * @param filePath - Storage 경로 (user_id/filename)
+ */
+export async function deleteReceiptImage(filePath: string): Promise<void> {
+  if (!filePath) return;
+
+  const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error('Not authenticated');
+
+  // 보안: 자신의 이미지만 삭제 가능
+  if (!filePath.startsWith(user.id)) {
+    throw new Error('Unauthorized');
+  }
+
+  const { error } = await supabase.storage
+    .from(RECEIPT_BUCKET)
+    .remove([filePath]);
+
+  if (error) {
+    console.error('Error deleting image:', error);
+    throw error;
+  }
 }

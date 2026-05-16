@@ -58,12 +58,17 @@ export default function OCRReviewPage() {
   const [mounted, setMounted] = useState(false);
   const [batchEditDate, setBatchEditDate] = useState<string | null>(null); // 일괄 수정할 원래 날짜
   const [showExitConfirm, setShowExitConfirm] = useState(false); // 뒤로가기 확인 모달
+  const [uploadedImagePaths, setUploadedImagePaths] = useState<string[]>([]); // 업로드된 이미지 경로
 
   useEffect(() => {
     setMounted(true);
     const loadData = async () => {
       // sessionStorage에서 추출된 데이터 로드
       const stored = sessionStorage.getItem('ocrTransactions');
+      const storedImages = sessionStorage.getItem('uploadedImagePaths');
+      if (storedImages) {
+        setUploadedImagePaths(JSON.parse(storedImages));
+      }
       if (stored) {
         const transactions: ExtractedTransaction[] = JSON.parse(stored);
         // 기존 DB 데이터 가져오기
@@ -226,6 +231,9 @@ export default function OCRReviewPage() {
 
   // 저장
   const handleSave = async () => {
+    // 첫 번째 업로드된 이미지 경로 (모든 지출에 연결)
+    const imageUrl = uploadedImagePaths.length > 0 ? uploadedImagePaths[0] : undefined;
+
     const expensesToSave: Expense[] = active.map((t) => ({
       id: generateId(),
       date: t.date,
@@ -235,6 +243,7 @@ export default function OCRReviewPage() {
       memo: '',
       createdAt: new Date().toISOString(),
       source: 'ocr' as const,
+      imageUrl,
     }));
 
     if (expensesToSave.length === 0) {
@@ -244,6 +253,7 @@ export default function OCRReviewPage() {
 
     await saveExpenses(expensesToSave);
     sessionStorage.removeItem('ocrTransactions');
+    sessionStorage.removeItem('uploadedImagePaths');
     router.push('/');
   };
 
@@ -767,6 +777,7 @@ export default function OCRReviewPage() {
               <button
                 onClick={() => {
                   sessionStorage.removeItem('ocrTransactions');
+                  sessionStorage.removeItem('uploadedImagePaths');
                   router.push('/add/photo');
                 }}
                 style={{

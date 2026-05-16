@@ -8,6 +8,7 @@ export interface Expense {
   memo: string // 메모
   createdAt: string // ISO timestamp
   source: 'ocr' | 'manual' // 입력 방식
+  imageUrl?: string // 영수증/캡쳐 이미지 URL
 }
 
 // 카테고리 타입

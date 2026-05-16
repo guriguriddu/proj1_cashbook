@@ -9,6 +9,7 @@ interface ButtonProps {
   disabled?: boolean;
   full?: boolean;
   style?: CSSProperties;
+  type?: 'button' | 'submit' | 'reset';
 }
 
 export function PrimaryButton({
@@ -17,9 +18,11 @@ export function PrimaryButton({
   disabled,
   full = true,
   style,
+  type = 'button',
 }: ButtonProps) {
   return (
     <button
+      type={type}
       onClick={onClick}
       disabled={disabled}
       style={{

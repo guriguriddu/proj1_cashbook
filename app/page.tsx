@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Screen,
@@ -11,14 +10,9 @@ import {
   Badge,
   CatIcon,
 } from '@/components/ui';
-import {
-  getExpensesByMonth,
-  getCurrentMonth,
-  getMonthlySummary,
-} from '@/lib/storage';
+import { useExpensesByMonth, useMonthlySummary, useCategories } from '@/hooks/useSupabaseData';
+import { getCurrentMonth } from '@/lib/supabase-storage';
 import { formatDateShort, getDaysRemaining } from '@/lib/utils';
-import { DEFAULT_CATEGORIES } from '@/constants/categories';
-import type { Expense } from '@/types';
 
 // 원화 포맷 함수
 function formatWon(amount: number): string {
@@ -30,28 +24,44 @@ function formatWon(amount: number): string {
 
 export default function HomePage() {
   const router = useRouter();
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [summary, setSummary] = useState<ReturnType<typeof getMonthlySummary> | null>(null);
-  const [mounted, setMounted] = useState(false);
-
   const currentMonth = getCurrentMonth();
   const daysLeft = getDaysRemaining();
 
-  useEffect(() => {
-    setMounted(true);
-    loadData();
-  }, []);
+  const { expenses, loading: expensesLoading } = useExpensesByMonth(currentMonth);
+  const { summary, loading: summaryLoading } = useMonthlySummary(currentMonth);
+  const { categories } = useCategories();
 
-  const loadData = () => {
-    const monthExpenses = getExpensesByMonth(currentMonth);
-    setExpenses(monthExpenses);
-    setSummary(getMonthlySummary(currentMonth));
-  };
+  const loading = expensesLoading || summaryLoading;
 
-  if (!mounted || !summary) {
+  if (loading || !summary) {
     return (
       <Screen>
-        <div style={{ padding: 20, color: T.textSec }}>로딩 중...</div>
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                border: `3px solid ${T.divider}`,
+                borderTopColor: T.accent,
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 16px',
+              }}
+            />
+            <p style={{ color: T.textSec, fontSize: 15 }}>로딩 중...</p>
+          </div>
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
       </Screen>
     );
   }
@@ -63,7 +73,7 @@ export default function HomePage() {
   const over = remaining < 0;
 
   // 카테고리별 사용량 정렬 (사용량 내림차순)
-  const categoryRows = DEFAULT_CATEGORIES
+  const categoryRows = categories
     .filter((c) => c.id !== 'other')
     .map((cat) => {
       const catData = summary.categoryBreakdown[cat.id];

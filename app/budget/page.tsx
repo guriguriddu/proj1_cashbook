@@ -150,7 +150,7 @@ export default function BudgetPage() {
     if (period === 'quarter' && 'quarter' in info && 'year' in info) {
       return getQuarterlyTotal(info.year, info.quarter as 1 | 2 | 3 | 4);
     }
-    if (period === 'month' && 'monthKey' in info) {
+    if (period === 'month' && 'monthKey' in info && info.monthKey) {
       return getMonthlyTotal(info.monthKey);
     }
     return 0;

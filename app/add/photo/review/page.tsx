@@ -849,7 +849,7 @@ function OCRRow({
         display: 'flex',
         alignItems: 'center',
         gap: 12,
-        padding: '12px 20px',
+        padding: '14px 20px',
         background: bgColor,
         borderBottom: last ? 'none' : `1px solid ${T.divider}`,
         borderLeft: `3px solid ${borderColor}`,
@@ -934,8 +934,8 @@ function OCRRow({
         }}
         aria-label="제외"
         style={{
-          width: 32,
-          height: 32,
+          width: 36,
+          height: 36,
           border: 0,
           background: 'transparent',
           cursor: 'pointer',

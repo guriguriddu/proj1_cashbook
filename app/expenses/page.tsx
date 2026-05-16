@@ -461,7 +461,7 @@ function ExpenseRow({ e, onClick }: { e: Expense; onClick: () => void }) {
         display: 'flex',
         alignItems: 'center',
         gap: 12,
-        padding: '12px 20px',
+        padding: '14px 20px',
         cursor: 'pointer',
         border: 0,
         background: 'transparent',

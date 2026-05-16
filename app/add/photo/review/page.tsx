@@ -195,6 +195,14 @@ export default function OCRReviewPage() {
   const transferCount = active.filter((i) => i.isPaymentTransfer).length;
   const linkedTransferCount = active.filter((i) => i.linkedPaymentId || i.linkedTransferId).length;
 
+  // 필수 필드 누락 카운트
+  const invalidCount = active.filter((i) => !i.amount || i.amount === 0 || !i.merchant || !i.date).length;
+
+  // 기존 중복 일괄 제외
+  const excludeAllExistingDuplicates = () => {
+    setItems(items.map((i) => i.isExistingDuplicate ? { ...i, excluded: true } : i));
+  };
+
   // 날짜별 그룹핑
   const byDate: { [date: string]: ReviewItem[] } = {};
   active.forEach((i) => {
@@ -288,17 +296,56 @@ export default function OCRReviewPage() {
                     background: 'rgba(59,130,246,0.12)',
                     display: 'flex',
                     alignItems: 'center',
+                    justifyContent: 'space-between',
                     gap: 8,
                     fontSize: 12,
                     fontWeight: 600,
                     color: '#2563EB',
                   }}
                 >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <svg width="14" height="14" viewBox="0 0 14 14">
+                      <circle cx="7" cy="7" r="6" stroke="#2563EB" strokeWidth="1.4" fill="none" />
+                      <path d="M7 4v4M7 10v.5" stroke="#2563EB" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                    {existingDuplicateCount}건 이미 저장된 내역
+                  </div>
+                  <button
+                    onClick={excludeAllExistingDuplicates}
+                    style={{
+                      border: 0,
+                      background: '#2563EB',
+                      color: '#fff',
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    모두 제외
+                  </button>
+                </div>
+              )}
+              {invalidCount > 0 && (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(220,38,38,0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#DC2626',
+                  }}
+                >
                   <svg width="14" height="14" viewBox="0 0 14 14">
-                    <circle cx="7" cy="7" r="6" stroke="#2563EB" strokeWidth="1.4" fill="none" />
-                    <path d="M7 4v4M7 10v.5" stroke="#2563EB" strokeWidth="1.4" strokeLinecap="round" />
+                    <circle cx="7" cy="7" r="6" stroke="#DC2626" strokeWidth="1.4" fill="none" />
+                    <path d="M7 4v4M7 10v.5" stroke="#DC2626" strokeWidth="1.4" strokeLinecap="round" />
                   </svg>
-                  {existingDuplicateCount}건 이미 저장된 내역 - 중복 확인 필요
+                  {invalidCount}건 인식 실패 - 탭하여 직접 입력 필요
                 </div>
               )}
               {duplicateCount > 0 && (
@@ -768,11 +815,15 @@ function OCRRow({
   const hasCancelMatch = item.cancelledBy || item.cancels;
   const hasDuplicateIssue = item.isExistingDuplicate || item.isDuplicate;
   const hasTransferLink = item.isPaymentTransfer || item.linkedTransferId;
+  const isInvalid = !item.amount || item.amount === 0 || !item.merchant || !item.date;
 
   // 배경색 및 테두리 결정
   let bgColor = 'transparent';
   let borderColor = 'transparent';
-  if (hasDuplicateIssue) {
+  if (isInvalid) {
+    bgColor = 'rgba(220,38,38,0.08)';
+    borderColor = '#DC2626';
+  } else if (hasDuplicateIssue) {
     bgColor = 'rgba(239,68,68,0.06)';
     borderColor = '#EF4444';
   } else if (hasTransferLink) {
@@ -830,12 +881,13 @@ function OCRRow({
             >
               {item.merchant}
             </div>
-            {item.isExistingDuplicate && <Badge tone="blue" size="sm">기존</Badge>}
-            {item.isDuplicate && !item.isExistingDuplicate && <Badge tone="danger" size="sm">중복</Badge>}
-            {hasCancelMatch && <Badge tone="purple" size="sm">{item.isCancellation ? '취소' : '취소됨'}</Badge>}
-            {item.isPaymentTransfer && <Badge tone="accent" size="sm">충전</Badge>}
-            {item.linkedTransferId && <Badge tone="accent" size="sm">연결됨</Badge>}
-            {needsReview && !item.isDuplicate && !hasCancelMatch && !item.isExistingDuplicate && !item.isPaymentTransfer && <Badge tone="warn" size="sm">확인</Badge>}
+            {isInvalid && <Badge tone="danger" size="sm">입력필요</Badge>}
+            {!isInvalid && item.isExistingDuplicate && <Badge tone="blue" size="sm">기존</Badge>}
+            {!isInvalid && item.isDuplicate && !item.isExistingDuplicate && <Badge tone="danger" size="sm">중복</Badge>}
+            {!isInvalid && hasCancelMatch && <Badge tone="purple" size="sm">{item.isCancellation ? '취소' : '취소됨'}</Badge>}
+            {!isInvalid && item.isPaymentTransfer && <Badge tone="accent" size="sm">충전</Badge>}
+            {!isInvalid && item.linkedTransferId && <Badge tone="accent" size="sm">연결됨</Badge>}
+            {!isInvalid && needsReview && !item.isDuplicate && !hasCancelMatch && !item.isExistingDuplicate && !item.isPaymentTransfer && <Badge tone="warn" size="sm">확인</Badge>}
           </div>
           <div
             style={{

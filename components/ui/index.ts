@@ -5,7 +5,7 @@ export { AppHeader } from './AppHeader';
 export { ScreenBody } from './ScreenBody';
 export { PrimaryButton, SecondaryButton, TextButton } from './Buttons';
 export { ProgressBar } from './ProgressBar';
-export { Badge } from './Badge';
+export { Badge, type BadgeTone, type BadgeSize } from './Badge';
 export { MoneyText } from './MoneyText';
 export { CatIcon } from './CatIcon';
 export { Card } from './Card';

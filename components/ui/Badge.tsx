@@ -3,8 +3,8 @@
 import { T } from './theme';
 import { ReactNode, CSSProperties } from 'react';
 
-type BadgeTone = 'neutral' | 'accent' | 'warn' | 'danger' | 'blue';
-type BadgeSize = 'sm' | 'md' | 'lg';
+export type BadgeTone = 'neutral' | 'accent' | 'warn' | 'danger' | 'blue' | 'purple';
+export type BadgeSize = 'sm' | 'md' | 'lg';
 
 interface BadgeProps {
   children: ReactNode;
@@ -19,6 +19,7 @@ const tones: Record<BadgeTone, { bg: string; fg: string }> = {
   warn: { bg: T.warnSoft, fg: '#B45309' },
   danger: { bg: T.dangerSoft, fg: T.danger },
   blue: { bg: T.blueSoft, fg: T.blue },
+  purple: { bg: 'rgba(168,85,247,0.12)', fg: '#7C3AED' },
 };
 
 const sizes: Record<BadgeSize, { fontSize: number; padding: string; radius: number }> = {

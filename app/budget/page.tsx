@@ -17,7 +17,7 @@ import {
   getCurrentMonth,
 } from '@/lib/supabase-storage';
 import * as storage from '@/lib/supabase-storage';
-import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
+import { useBudget, useGoalSettings, useCategories } from '@/hooks/useSupabaseData';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
 import type { Budget } from '@/types';
 
@@ -85,6 +85,7 @@ export default function BudgetPage() {
   const router = useRouter();
   const { budget, loading: budgetLoading, refresh: refreshBudget } = useBudget();
   const { settings } = useGoalSettings();
+  const { categories: allCategories } = useCategories();
   const monthlyIncome = settings.monthlyIncome;
   const [period, setPeriod] = useState<PeriodType>('month');
   const [offset, setOffset] = useState(0);
@@ -152,7 +153,7 @@ export default function BudgetPage() {
     { id: 'month' as const, label: '월별' },
   ];
 
-  const categories = DEFAULT_CATEGORIES.filter((c) => c.id !== 'other');
+  const categories = (allCategories.length > 0 ? allCategories : DEFAULT_CATEGORIES).filter((c) => c.id !== 'other');
 
   return (
     <Screen>
@@ -250,7 +251,7 @@ export default function BudgetPage() {
         <StepBtn onClick={() => setOffset(offset + 1)} dir="next" />
       </div>
 
-      <ScreenBody>
+      <ScreenBody padBottom={100}>
         {/* Big goal card for selected period */}
         <PeriodGoalCard info={info} goal={goal} used={used} incomeExceeded={incomeExceeded} />
 
@@ -347,7 +348,7 @@ export default function BudgetPage() {
                     transition: 'background .15s, border-color .15s',
                   }}
                 >
-                  <CatIcon catId={c.id} size={36} />
+                  <CatIcon catId={c.id} size={36} icon={c.icon} color={c.color} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
@@ -424,10 +425,18 @@ export default function BudgetPage() {
           </div>
         )}
 
-        <div style={{ padding: '0 20px 8px' }}>
-          <SecondaryButton onClick={() => router.push('/')}>저장</SecondaryButton>
-        </div>
+        <div style={{ height: 8 }} />
       </ScreenBody>
+
+      {/* 하단 고정 저장 버튼 */}
+      <div style={{
+        position: 'fixed', left: 0, right: 0, bottom: 0,
+        padding: '12px 20px 28px',
+        background: 'linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0))',
+        maxWidth: 512, margin: '0 auto', zIndex: 10,
+      }}>
+        <SecondaryButton onClick={() => router.push('/')}>완료</SecondaryButton>
+      </div>
 
       {pendingBudget && (
         <div
@@ -472,7 +481,7 @@ export default function BudgetPage() {
 
       {editing && (
         <CategoryBudgetSheet
-          cat={DEFAULT_CATEGORIES.find((c) => c.id === editing)!}
+          cat={(categories.find((c) => c.id === editing) || DEFAULT_CATEGORIES.find((c) => c.id === editing))!}
           value={budget.categoryBudgets[editing] || 0}
           onClose={() => setEditing(null)}
           onSave={async (v) => {

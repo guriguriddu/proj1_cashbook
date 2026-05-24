@@ -119,8 +119,21 @@ export default function CategoriesPage() {
 
         {/* 직접 추가한 카테고리 */}
         <div style={{ padding: '16px 20px 8px' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, marginBottom: 10 }}>
-            직접 추가한 카테고리
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer }}>
+              직접 추가한 카테고리
+            </div>
+            <button
+              onClick={() => setShowAddSheet(true)}
+              style={{
+                border: 0, background: T.accentSoft, color: T.accent,
+                fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                padding: '5px 12px', borderRadius: 999,
+                fontFamily: 'Pretendard, system-ui, sans-serif',
+              }}
+            >
+              + 추가
+            </button>
           </div>
           {loading ? (
             <div style={{ color: T.textSec, fontSize: 14, padding: '12px 0' }}>불러오는 중...</div>
@@ -170,7 +183,7 @@ export default function CategoriesPage() {
         </div>
       </ScreenBody>
 
-      {/* 하단 추가 버튼 */}
+      {/* 하단 저장 버튼 */}
       <div
         style={{
           position: 'fixed', left: 0, right: 0, bottom: 0,
@@ -179,8 +192,8 @@ export default function CategoriesPage() {
           maxWidth: 512, margin: '0 auto', zIndex: 100,
         }}
       >
-        <PrimaryButton onClick={() => setShowAddSheet(true)}>
-          + 카테고리 추가
+        <PrimaryButton onClick={() => router.back()}>
+          저장
         </PrimaryButton>
       </div>
 

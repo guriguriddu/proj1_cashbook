@@ -38,7 +38,7 @@ interface ReviewItem extends ExtractedTransaction {
 // 취소 관련 키워드
 const CANCEL_KEYWORDS = ['취소', '환불', '반품', '취소완료', '결제취소', '주문취소'];
 
-// 간편결제 충전 관련 키워드
+// 간편결제/쇼핑몰 선불머니 키워드
 const PAYMENT_TRANSFER_KEYWORDS = [
   '카카오페이', 'kakaopay', '카카오 페이',
   '네이버페이', 'naverpay', '네이버 페이', 'npay',
@@ -46,6 +46,16 @@ const PAYMENT_TRANSFER_KEYWORDS = [
   '페이코', 'payco',
   '삼성페이', 'samsung pay',
   '애플페이', 'apple pay',
+  '무신사머니', '무신사 머니',
+  '당근페이', '당근머니',
+  '쿠팡페이', '쿠팡 페이',
+  '배민페이', '배민머니',
+  '마켓컬리', '컬리캐시',
+  '지그재그', '에이블리',
+  '하나머니', '하나 머니',
+  'KB페이', 'kbpay',
+  '티머니', 'T-money',
+  '캐시비',
 ];
 
 // 은행 이체 키워드
@@ -56,6 +66,7 @@ export default function OCRReviewPage() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [excludeConfirm, setExcludeConfirm] = useState<string | null>(null); // 제외 확인 대상 ID
   const [batchEditDate, setBatchEditDate] = useState<string | null>(null); // 일괄 수정할 원래 날짜
   const [showExitConfirm, setShowExitConfirm] = useState(false); // 뒤로가기 확인 모달
   const [uploadedImagePaths, setUploadedImagePaths] = useState<string[]>([]); // 업로드된 이미지 경로
@@ -584,7 +595,7 @@ export default function OCRReviewPage() {
                   item={it}
                   last={idx === arr.length - 1}
                   onTap={() => setEditing(it.id)}
-                  onExclude={() => update(it.id, { excluded: true })}
+                  onExclude={() => setExcludeConfirm(it.id)}
                 />
               ))}
             </div>
@@ -689,8 +700,8 @@ export default function OCRReviewPage() {
             setEditing(null);
           }}
           onExclude={() => {
-            update(editing, { excluded: true });
             setEditing(null);
+            setExcludeConfirm(editing);
           }}
         />
       )}
@@ -704,6 +715,77 @@ export default function OCRReviewPage() {
           onApply={(newDate) => batchUpdateDate(batchEditDate, newDate)}
         />
       )}
+
+      {/* 제외 확인 모달 */}
+      {excludeConfirm && (() => {
+        const target = items.find((i) => i.id === excludeConfirm);
+        if (!target) return null;
+        return (
+          <div
+            style={{
+              position: 'fixed', inset: 0,
+              background: 'rgba(0,0,0,0.5)',
+              zIndex: 1000, display: 'flex',
+              alignItems: 'center', justifyContent: 'center', padding: 20,
+            }}
+            onClick={() => setExcludeConfirm(null)}
+          >
+            <div
+              style={{
+                background: T.bg, borderRadius: 20,
+                padding: '24px 20px 20px',
+                width: '100%', maxWidth: 320, textAlign: 'center',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{
+                width: 52, height: 52, borderRadius: 26,
+                background: 'rgba(239,68,68,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 14px',
+              }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="#EF4444" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
+                이 항목을 제외할까요?
+              </div>
+              <div style={{ fontSize: 14, color: T.textSec, lineHeight: 1.6, marginBottom: 6 }}>
+                <strong style={{ color: T.text }}>{target.merchant}</strong>
+              </div>
+              <div style={{ fontSize: 14, color: T.textSec, marginBottom: 22 }}>
+                ₩{target.amount.toLocaleString('ko-KR')} · 제외된 항목은 하단에서 복구할 수 있어요.
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => setExcludeConfirm(null)}
+                  style={{
+                    flex: 1, padding: '14px 0', border: `1px solid ${T.divider}`,
+                    borderRadius: 12, background: T.bgMuted, color: T.text,
+                    fontSize: 15, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  취소
+                </button>
+                <button
+                  onClick={() => {
+                    update(excludeConfirm, { excluded: true });
+                    setExcludeConfirm(null);
+                  }}
+                  style={{
+                    flex: 1, padding: '14px 0', border: 0,
+                    borderRadius: 12, background: '#EF4444', color: '#fff',
+                    fontSize: 15, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  제외하기
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 뒤로가기 확인 모달 */}
       {showExitConfirm && (

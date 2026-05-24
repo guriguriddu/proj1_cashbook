@@ -58,40 +58,27 @@ export async function POST(request: NextRequest) {
         {
           parts: [
             {
-              text: `이 이미지는 카드 결제 내역, 은행 계좌 거래 내역, 토스/카카오페이 등 간편결제 앱의 소비 내역 캡쳐입니다.
-이미지에서 모든 지출 항목을 추출하고 카테고리를 분류해주세요.
+              text: `이 이미지는 은행 계좌 거래 내역, 카드 결제 내역, 또는 간편결제 앱 소비 내역 캡쳐입니다.
+이미지에 보이는 모든 "출금/지출" 항목을 빠짐없이 추출해주세요.
 
-[반드시 포함해야 하는 항목]
-- 카드 결제
-- 계좌에서 빠져나간 모든 지출: "내 하나계좌 → PAYCO결제", "내 계좌 → 카카오페이", "내 계좌 → 네이버페이", "내 통장 → 토스" 등 간편결제 서비스로의 이체는 실제 소비 지출이므로 반드시 포함. 사용처는 "PAYCO결제", "카카오페이결제" 등으로 기재.
-- ATM 출금, 현금 인출
-- 구독/정기결제
+★ 절대 제외하지 말 것: PAYCO결제, 카카오페이, 네이버페이, 토스, 삼성페이, 애플페이로 나가는 금액.
+  "내 하나계좌 → PAYCO결제 -70,000원" 같은 항목은 반드시 포함. 사용처는 "PAYCO결제"로 기재.
 
-[제외 대상]
-- 내 계좌끼리 이동 (예: 내 하나계좌 → 내 신한계좌)
-- 월급/급여/이자 입금 (돈이 들어오는 것)
-- 주식/펀드/적금 이체
+포함 대상: 카드결제, ATM출금, 간편결제 이체, 구독/정기결제, 모든 출금(-) 항목
+제외 대상: 내 계좌끼리 이동, 월급/이자/환급 입금(+), 주식/적금 이체
 
-중요: 날짜에 년도가 없으면 ${new Date().getFullYear()}년으로 가정해주세요.
+날짜에 년도가 없으면 ${new Date().getFullYear()}년으로 가정.
 
-카테고리 목록 (반드시 이 중에서 선택):
-- food: 식비
-- cafe: 카페
-- shopping: 쇼핑
-- transport: 교통비
-- fixed: 고정비 (월세, 구독 등)
-- telecom: 통신
-- insurance: 보험
-- education: 자기계발
-- travel: 여행
-- cash: 현금 출금
-- other: 기타 (간편결제 이체, 분류 불명 등)
+카테고리 (반드시 아래 ID 중 하나만 사용):
+food, cafe, shopping, transport, fixed, telecom, insurance, education, travel, cash, other
 
-각 지출마다 다음 형식으로 출력해주세요:
+간편결제(PAYCO·카카오페이·네이버페이 등) 이체는 카테고리 other 사용.
+
+출력 형식 (항목마다 반복):
 날짜: YYYY-MM-DD
-금액: 숫자만 (원 단위)
-사용처: 상호명 또는 결제수단명
-카테고리: 카테고리ID
+금액: 숫자만
+사용처: 상호명
+카테고리: other
 ---
 
 예시:
@@ -141,9 +128,10 @@ export async function POST(request: NextRequest) {
     const data = await response.json()
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
-    console.log('Gemini OCR 결과:', text)
+    console.log('[OCR] Gemini 원본 응답:\n' + text)
+    console.log('[OCR] 파일명:', file.name, '크기:', file.size)
 
-    return NextResponse.json({ text })
+    return NextResponse.json({ text, _debug: text })
   } catch (error) {
     console.error('OCR API 에러:', error)
     return NextResponse.json(

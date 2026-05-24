@@ -461,24 +461,57 @@ export async function getCategories(): Promise<Category[]> {
 
   if (!user) return DEFAULT_CATEGORIES;
 
-  const { data, error } = await supabase
+  // 커스텀 카테고리만 DB에서 가져옴 (is_default=false)
+  const { data } = await supabase
     .from('categories')
     .select('*')
     .eq('user_id', user.id)
+    .eq('is_default', false)
     .order('sort_order', { ascending: true });
 
-  if (error || !data || data.length === 0) {
-    return DEFAULT_CATEGORIES;
-  }
-
-  return (data as CategoryRow[]).map((c) => ({
+  const customCategories: Category[] = ((data || []) as CategoryRow[]).map((c) => ({
     id: c.category_id,
     name: c.name,
     icon: c.icon,
     color: c.color,
     keywords: c.keywords || [],
     order: c.sort_order,
+    isCustom: true,
   }));
+
+  return [...DEFAULT_CATEGORIES, ...customCategories];
+}
+
+export async function addCustomCategory(category: Omit<Category, 'order' | 'isCustom'>): Promise<void> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { error } = await supabase.from('categories').insert({
+    user_id: user.id,
+    category_id: category.id,
+    name: category.name,
+    icon: category.icon,
+    color: category.color,
+    keywords: category.keywords || [],
+    sort_order: 200,
+    is_default: false,
+  });
+  if (error) throw error;
+}
+
+export async function deleteCustomCategory(categoryId: string): Promise<void> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('categories')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('category_id', categoryId)
+    .eq('is_default', false);
+  if (error) throw error;
 }
 
 export async function saveCategories(categories: Category[]): Promise<void> {

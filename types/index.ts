@@ -19,6 +19,7 @@ export interface Category {
   color: string // tailwind color class
   keywords: string[] // 자동분류용 키워드
   order: number // 정렬 순서
+  isCustom?: boolean // 사용자가 직접 추가한 카테고리
 }
 
 // 예산 설정 타입

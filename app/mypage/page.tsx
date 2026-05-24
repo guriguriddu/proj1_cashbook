@@ -236,10 +236,33 @@ export default function MyPage() {
               </div>
             </div>
             <button
-              onClick={handleLogout}
+              onClick={() => router.push('/categories')}
               style={{
                 width: '100%',
                 marginTop: 16,
+                padding: '12px 16px',
+                border: `1px solid ${T.divider}`,
+                borderRadius: 12,
+                background: T.bgMuted,
+                color: T.text,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span>카테고리 관리</span>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button
+              onClick={handleLogout}
+              style={{
+                width: '100%',
+                marginTop: 8,
                 padding: '12px 16px',
                 border: `1px solid ${T.divider}`,
                 borderRadius: 12,

@@ -1,263 +1,319 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-  getMonthlySummary,
-  getCurrentMonth,
-  getHomeCategoryOrder,
-  saveHomeCategoryOrder,
-  getBudget
-} from '@/lib/storage'
-import { formatCurrency } from '@/lib/utils'
-import { DEFAULT_CATEGORIES, getCategoryById } from '@/constants/categories'
-import BudgetProgress from '@/components/BudgetProgress'
+  Screen,
+  AppHeader,
+  ScreenBody,
+  T,
+  PrimaryButton,
+  SecondaryButton,
+  Badge,
+  BottomSheet,
+} from '@/components/ui';
+import { CatIcon } from '@/components/ui/CatIcon';
+import { DEFAULT_CATEGORIES } from '@/constants/categories';
+import { getCategories, addCustomCategory, deleteCustomCategory } from '@/lib/supabase-storage';
+import type { Category } from '@/types';
+
+const PRESET_COLORS = [
+  '#F97316', '#EF4444', '#8B5CF6', '#3B82F6', '#10B981',
+  '#F59E0B', '#EC4899', '#06B6D4', '#6366F1', '#0EA5E9',
+  '#84CC16', '#6B7280',
+];
+
+const PRESET_EMOJIS = [
+  '💰', '🏦', '💳', '🛒', '🎮', '🎵', '📚', '🏋️', '🐾', '🌿',
+  '🎁', '🔧', '🏠', '✈️', '🍺', '💊', '🎨', '📱', '🚀', '⭐',
+];
 
 export default function CategoriesPage() {
-  const router = useRouter()
-  const [summary, setSummary] = useState<ReturnType<typeof getMonthlySummary> | null>(null)
-  const [isEditingOrder, setIsEditingOrder] = useState(false)
-  const [homeOrder, setHomeOrder] = useState<string[]>([])
-  const [draggedItem, setDraggedItem] = useState<string | null>(null)
+  const router = useRouter();
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddSheet, setShowAddSheet] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
 
-  const currentMonth = getCurrentMonth()
+  // 추가 폼 상태
+  const [newName, setNewName] = useState('');
+  const [newIcon, setNewIcon] = useState('💰');
+  const [newColor, setNewColor] = useState('#F97316');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    loadData()
-  }, [])
+    load();
+  }, []);
 
-  const loadData = () => {
-    const summaryData = getMonthlySummary(currentMonth)
-    setSummary(summaryData)
+  async function load() {
+    setLoading(true);
+    const cats = await getCategories();
+    setCategories(cats);
+    setLoading(false);
+  }
 
-    const savedOrder = getHomeCategoryOrder()
-    if (savedOrder.length > 0) {
-      setHomeOrder(savedOrder)
-    } else {
-      // 기본값: 상위 5개 카테고리
-      setHomeOrder(DEFAULT_CATEGORIES.filter(c => c.id !== 'other').slice(0, 5).map(c => c.id))
+  async function handleAdd() {
+    if (!newName.trim()) {
+      setError('카테고리 이름을 입력해주세요');
+      return;
+    }
+    const id = 'custom_' + Date.now();
+    setSaving(true);
+    try {
+      await addCustomCategory({ id, name: newName.trim(), icon: newIcon, color: newColor, keywords: [] });
+      setShowAddSheet(false);
+      setNewName('');
+      setNewIcon('💰');
+      setNewColor('#F97316');
+      setError('');
+      await load();
+    } catch {
+      setError('저장에 실패했습니다');
+    } finally {
+      setSaving(false);
     }
   }
 
-  const handleSaveOrder = () => {
-    saveHomeCategoryOrder(homeOrder)
-    setIsEditingOrder(false)
-    alert('홈 화면 카테고리 순서가 저장되었습니다.')
-  }
-
-  const handleToggleCategory = (categoryId: string) => {
-    if (homeOrder.includes(categoryId)) {
-      setHomeOrder(homeOrder.filter(id => id !== categoryId))
-    } else {
-      setHomeOrder([...homeOrder, categoryId])
+  async function handleDelete(cat: Category) {
+    try {
+      await deleteCustomCategory(cat.id);
+      setDeleteTarget(null);
+      await load();
+    } catch {
+      alert('삭제에 실패했습니다');
     }
   }
 
-  const handleMoveUp = (categoryId: string) => {
-    const index = homeOrder.indexOf(categoryId)
-    if (index > 0) {
-      const newOrder = [...homeOrder]
-      ;[newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]]
-      setHomeOrder(newOrder)
-    }
-  }
-
-  const handleMoveDown = (categoryId: string) => {
-    const index = homeOrder.indexOf(categoryId)
-    if (index < homeOrder.length - 1) {
-      const newOrder = [...homeOrder]
-      ;[newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]]
-      setHomeOrder(newOrder)
-    }
-  }
-
-  if (!summary) {
-    return <div className="p-4 text-gray-500">로딩 중...</div>
-  }
-
-  // 카테고리별 데이터 (사용금액 많은 순 정렬)
-  const categoryData = DEFAULT_CATEGORIES
-    .filter(cat => cat.id !== 'other')
-    .map(cat => ({
-      ...cat,
-      spent: summary.categoryBreakdown[cat.id]?.spent || 0,
-      budget: summary.categoryBreakdown[cat.id]?.budget || 0,
-    }))
-    .sort((a, b) => b.spent - a.spent)
+  const defaultCats = categories.filter((c) => !c.isCustom);
+  const customCats = categories.filter((c) => c.isCustom);
 
   return (
-    <div className="p-4">
-      {/* 헤더 */}
-      <header className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">카테고리</h1>
-          <p className="text-sm text-gray-500">전체 카테고리 현황</p>
-        </div>
-        <button
-          onClick={() => router.back()}
-          className="text-gray-500"
-        >
-          ✕
-        </button>
-      </header>
+    <Screen>
+      <AppHeader title="카테고리 관리" onBack={() => router.back()} />
+      <ScreenBody padBottom={100}>
 
-      {/* 홈 화면 카테고리 순서 설정 */}
-      <div className="card p-4 mb-4">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="font-bold text-gray-900">홈 화면 표시 설정</h2>
-          {!isEditingOrder ? (
-            <button
-              onClick={() => setIsEditingOrder(true)}
-              className="text-sm text-blue-600 font-medium"
-            >
-              편집
-            </button>
-          ) : (
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setIsEditingOrder(false)
-                  loadData() // 원래 값으로 복원
+        {/* 기본 카테고리 */}
+        <div style={{ padding: '16px 20px 8px' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, marginBottom: 10 }}>
+            기본 카테고리
+          </div>
+          <div style={{ background: T.bg, borderRadius: 16, overflow: 'hidden', border: `1px solid ${T.divider}` }}>
+            {defaultCats.map((cat, i) => (
+              <div
+                key={cat.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '13px 16px',
+                  borderBottom: i < defaultCats.length - 1 ? `1px solid ${T.divider}` : 'none',
                 }}
-                className="text-sm text-gray-500"
               >
-                취소
-              </button>
-              <button
-                onClick={handleSaveOrder}
-                className="text-sm text-blue-600 font-medium"
-              >
-                저장
-              </button>
+                <CatIcon catId={cat.id} size={36} icon={cat.icon} color={cat.color} />
+                <span style={{ fontSize: 15, fontWeight: 600, flex: 1 }}>{cat.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 직접 추가한 카테고리 */}
+        <div style={{ padding: '16px 20px 8px' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, marginBottom: 10 }}>
+            직접 추가한 카테고리
+          </div>
+          {loading ? (
+            <div style={{ color: T.textSec, fontSize: 14, padding: '12px 0' }}>불러오는 중...</div>
+          ) : customCats.length === 0 ? (
+            <div
+              style={{
+                background: T.bgSoft,
+                borderRadius: 16,
+                padding: '24px',
+                textAlign: 'center',
+                color: T.textTer,
+                fontSize: 14,
+              }}
+            >
+              아직 추가한 카테고리가 없어요
+            </div>
+          ) : (
+            <div style={{ background: T.bg, borderRadius: 16, overflow: 'hidden', border: `1px solid ${T.divider}` }}>
+              {customCats.map((cat, i) => (
+                <div
+                  key={cat.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '13px 16px',
+                    borderBottom: i < customCats.length - 1 ? `1px solid ${T.divider}` : 'none',
+                  }}
+                >
+                  <CatIcon catId={cat.id} size={36} icon={cat.icon} color={cat.color} />
+                  <span style={{ fontSize: 15, fontWeight: 600, flex: 1 }}>{cat.name}</span>
+                  <Badge tone="blue" size="sm">직접 추가</Badge>
+                  <button
+                    onClick={() => setDeleteTarget(cat)}
+                    style={{
+                      border: 0, background: 'transparent',
+                      color: T.textTer, cursor: 'pointer',
+                      fontSize: 18, padding: '4px 6px',
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
+      </ScreenBody>
 
-        {isEditingOrder ? (
-          <div className="space-y-2">
-            <p className="text-xs text-gray-500 mb-3">
-              홈 화면에 표시할 카테고리를 선택하고 순서를 조정하세요
-            </p>
-
-            {/* 선택된 카테고리 (순서 조정 가능) */}
-            {homeOrder.length > 0 && (
-              <div className="mb-4">
-                <p className="text-xs font-medium text-gray-600 mb-2">표시할 카테고리 (순서대로)</p>
-                <div className="space-y-1">
-                  {homeOrder.map((catId, index) => {
-                    const cat = getCategoryById(catId)
-                    if (!cat) return null
-                    return (
-                      <div
-                        key={catId}
-                        className="flex items-center justify-between p-2 bg-blue-50 rounded-lg border border-blue-200"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400 text-xs w-4">{index + 1}</span>
-                          <span>{cat.icon}</span>
-                          <span className="text-sm font-medium">{cat.name}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleMoveUp(catId)}
-                            disabled={index === 0}
-                            className={`p-1 ${index === 0 ? 'text-gray-300' : 'text-gray-500'}`}
-                          >
-                            ▲
-                          </button>
-                          <button
-                            onClick={() => handleMoveDown(catId)}
-                            disabled={index === homeOrder.length - 1}
-                            className={`p-1 ${index === homeOrder.length - 1 ? 'text-gray-300' : 'text-gray-500'}`}
-                          >
-                            ▼
-                          </button>
-                          <button
-                            onClick={() => handleToggleCategory(catId)}
-                            className="p-1 text-red-500 ml-2"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* 선택되지 않은 카테고리 */}
-            <div>
-              <p className="text-xs font-medium text-gray-600 mb-2">추가 가능한 카테고리</p>
-              <div className="flex flex-wrap gap-2">
-                {DEFAULT_CATEGORIES
-                  .filter(cat => cat.id !== 'other' && !homeOrder.includes(cat.id))
-                  .map(cat => (
-                    <button
-                      key={cat.id}
-                      onClick={() => handleToggleCategory(cat.id)}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 rounded-full text-sm"
-                    >
-                      <span>{cat.icon}</span>
-                      <span>{cat.name}</span>
-                      <span className="text-blue-500 ml-1">+</span>
-                    </button>
-                  ))}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {homeOrder.map((catId, index) => {
-              const cat = getCategoryById(catId)
-              if (!cat) return null
-              return (
-                <span
-                  key={catId}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 rounded-full text-sm border border-blue-200"
-                >
-                  <span className="text-xs text-gray-400">{index + 1}</span>
-                  <span>{cat.icon}</span>
-                  <span>{cat.name}</span>
-                </span>
-              )
-            })}
-          </div>
-        )}
+      {/* 하단 추가 버튼 */}
+      <div
+        style={{
+          position: 'fixed', left: 0, right: 0, bottom: 0,
+          padding: '12px 20px 28px',
+          background: 'linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0))',
+          maxWidth: 512, margin: '0 auto', zIndex: 100,
+        }}
+      >
+        <PrimaryButton onClick={() => setShowAddSheet(true)}>
+          + 카테고리 추가
+        </PrimaryButton>
       </div>
 
-      {/* 전체 카테고리 현황 (사용금액 순) */}
-      <div className="card p-4">
-        <h2 className="font-bold text-gray-900 mb-4">이번 달 카테고리별 현황</h2>
-        <p className="text-xs text-gray-500 mb-4">사용금액이 많은 순서로 정렬됩니다</p>
+      {/* 추가 시트 */}
+      {showAddSheet && (
+        <BottomSheet open onClose={() => { setShowAddSheet(false); setError(''); }} title="카테고리 추가" height="85%">
+          <div style={{ padding: '0 20px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-        <div className="space-y-4">
-          {categoryData.map((cat) => (
-            <div key={cat.id}>
-              <BudgetProgress
-                label={cat.name}
-                icon={cat.icon}
-                spent={cat.spent}
-                budget={cat.budget}
-                color={cat.color}
+            {/* 미리보기 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px', background: T.bgSoft, borderRadius: 14 }}>
+              <div
+                style={{
+                  width: 48, height: 48, borderRadius: 14,
+                  background: newColor + '22', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', fontSize: 24,
+                }}
+              >
+                {newIcon}
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{newName || '카테고리 이름'}</div>
+                <Badge tone="blue" size="sm">직접 추가</Badge>
+              </div>
+            </div>
+
+            {/* 이름 */}
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec, marginBottom: 8 }}>카테고리 이름</div>
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="예: 의료비, 반려동물..."
+                maxLength={10}
+                style={{
+                  width: '100%', padding: '14px 16px',
+                  fontSize: 16, border: `1px solid ${T.divider}`,
+                  borderRadius: 12, outline: 'none',
+                  background: T.bgMuted, boxSizing: 'border-box',
+                  fontFamily: 'inherit',
+                }}
               />
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* 기타 카테고리 */}
-      <div className="card p-4 mt-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">📦</span>
-            <span className="font-medium text-gray-900">기타</span>
+            {/* 아이콘 */}
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec, marginBottom: 8 }}>아이콘</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {PRESET_EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => setNewIcon(emoji)}
+                    style={{
+                      width: 44, height: 44, borderRadius: 10, fontSize: 22,
+                      border: newIcon === emoji ? `2px solid ${T.accent}` : `1px solid ${T.divider}`,
+                      background: newIcon === emoji ? T.accentSoft : T.bgSoft,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 색상 */}
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec, marginBottom: 8 }}>색상</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {PRESET_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => setNewColor(color)}
+                    style={{
+                      width: 36, height: 36, borderRadius: '50%',
+                      background: color, border: 'none', cursor: 'pointer',
+                      outline: newColor === color ? `3px solid ${color}` : 'none',
+                      outlineOffset: 2,
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {error && (
+              <div style={{ fontSize: 13, color: T.danger, fontWeight: 500 }}>{error}</div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <SecondaryButton onClick={() => { setShowAddSheet(false); setError(''); }} style={{ flex: 1 }}>
+                취소
+              </SecondaryButton>
+              <PrimaryButton onClick={handleAdd} disabled={saving} style={{ flex: 1.5 }}>
+                {saving ? '저장 중...' : '추가하기'}
+              </PrimaryButton>
+            </div>
           </div>
-          <span className="font-semibold">
-            {formatCurrency(summary.categoryBreakdown['other']?.spent || 0)}
-          </span>
+        </BottomSheet>
+      )}
+
+      {/* 삭제 확인 모달 */}
+      {deleteTarget && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            zIndex: 1000, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', padding: 20,
+          }}
+          onClick={() => setDeleteTarget(null)}
+        >
+          <div
+            style={{
+              background: T.bg, borderRadius: 20,
+              padding: '24px 20px 20px', width: '100%', maxWidth: 320,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>카테고리 삭제</div>
+            <div style={{ fontSize: 14, color: T.textSec, lineHeight: 1.6, marginBottom: 20 }}>
+              <strong>{deleteTarget.name}</strong> 카테고리를 삭제할까요?<br />
+              이미 저장된 지출 내역은 유지됩니다.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <SecondaryButton onClick={() => setDeleteTarget(null)} style={{ flex: 1 }}>취소</SecondaryButton>
+              <PrimaryButton
+                onClick={() => handleDelete(deleteTarget)}
+                style={{ flex: 1, background: T.danger }}
+              >
+                삭제
+              </PrimaryButton>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  )
+      )}
+    </Screen>
+  );
 }

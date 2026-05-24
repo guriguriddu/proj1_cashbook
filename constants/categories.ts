@@ -132,6 +132,14 @@ export const DEFAULT_CATEGORIES: Category[] = [
     order: 10,
   },
   {
+    id: 'saving',
+    name: '저축',
+    icon: '🐷',
+    color: '#0EA5E9', // sky-500
+    keywords: ['저축', '적금', '예금', '저금', '비상금'],
+    order: 11,
+  },
+  {
     id: 'other',
     name: '기타',
     icon: '📦',

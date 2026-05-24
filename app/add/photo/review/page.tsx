@@ -144,18 +144,19 @@ export default function OCRReviewPage() {
       }
     });
 
-    // 4. 간편결제 충전/이체 감지
+    // 4. 간편결제 이체 감지 (자동충전 포함 가능성 → 금액 확인 유도)
     items.forEach((item) => {
-      const merchantLower = item.merchant.toLowerCase();
+      const textToCheck = (item.merchant + ' ' + item.rawText).toLowerCase();
       const hasPaymentKeyword = PAYMENT_TRANSFER_KEYWORDS.some((kw) =>
-        merchantLower.includes(kw.toLowerCase())
+        textToCheck.includes(kw.toLowerCase())
       );
-      const hasTransferKeyword = BANK_TRANSFER_KEYWORDS.some((kw) =>
-        merchantLower.includes(kw.toLowerCase())
-      );
+      // 이체/충전 키워드 또는 "내 계좌 →" 패턴
+      const hasTransferContext =
+        BANK_TRANSFER_KEYWORDS.some((kw) => textToCheck.includes(kw.toLowerCase())) ||
+        /내\s*\S*계좌/.test(textToCheck) ||
+        textToCheck.includes('→');
 
-      // 간편결제 서비스명 + 이체/충전 키워드가 있으면 충전으로 판단
-      if (hasPaymentKeyword && hasTransferKeyword) {
+      if (hasPaymentKeyword && hasTransferContext) {
         item.isPaymentTransfer = true;
       }
     });
@@ -409,6 +410,26 @@ export default function OCRReviewPage() {
                     <circle cx="7" cy="7" r="6" stroke="#7C3AED" strokeWidth="1.4" fill="none" />
                   </svg>
                   {cancelPairCount}건 취소/환불 매칭 - 둘 다 제외 권장
+                </div>
+              )}
+              {transferCount > 0 && (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(245,158,11,0.14)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#92400E',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14">
+                    <path d="M7 1l6.5 11.5h-13L7 1zM7 5.5v3M7 10.5v.5" stroke="#92400E" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  </svg>
+                  {transferCount}건 간편결제 이체 - 자동충전 포함 가능, 금액 직접 확인 필요
                 </div>
               )}
               {linkedTransferCount > 0 && (
@@ -825,7 +846,6 @@ function OCRRow({
   const needsReview = item.confidence && item.confidence < 0.8;
   const hasCancelMatch = item.cancelledBy || item.cancels;
   const hasDuplicateIssue = item.isExistingDuplicate || item.isDuplicate;
-  const hasTransferLink = item.isPaymentTransfer || item.linkedTransferId;
   const isInvalid = !item.amount || item.amount === 0 || !item.merchant || !item.date;
 
   // 배경색 및 테두리 결정
@@ -837,7 +857,10 @@ function OCRRow({
   } else if (hasDuplicateIssue) {
     bgColor = 'rgba(239,68,68,0.06)';
     borderColor = '#EF4444';
-  } else if (hasTransferLink) {
+  } else if (item.isPaymentTransfer) {
+    bgColor = 'rgba(245,158,11,0.07)';
+    borderColor = '#F59E0B';
+  } else if (item.linkedTransferId) {
     bgColor = 'rgba(16,185,129,0.06)';
     borderColor = '#10B981';
   }
@@ -896,7 +919,7 @@ function OCRRow({
             {!isInvalid && item.isExistingDuplicate && <Badge tone="blue" size="sm">기존</Badge>}
             {!isInvalid && item.isDuplicate && !item.isExistingDuplicate && <Badge tone="danger" size="sm">중복</Badge>}
             {!isInvalid && hasCancelMatch && <Badge tone="purple" size="sm">{item.isCancellation ? '취소' : '취소됨'}</Badge>}
-            {!isInvalid && item.isPaymentTransfer && <Badge tone="accent" size="sm">충전</Badge>}
+            {!isInvalid && item.isPaymentTransfer && <Badge tone="warn" size="sm">금액확인</Badge>}
             {!isInvalid && item.linkedTransferId && <Badge tone="accent" size="sm">연결됨</Badge>}
             {!isInvalid && needsReview && !item.isDuplicate && !hasCancelMatch && !item.isExistingDuplicate && !item.isPaymentTransfer && <Badge tone="warn" size="sm">확인</Badge>}
           </div>
@@ -996,6 +1019,31 @@ function EditTxnSheet({
   return (
     <BottomSheet open onClose={onClose} title="거래 편집" height="80%">
       <div style={{ padding: '0 20px 20px' }}>
+        {/* 간편결제 자동충전 경고 */}
+        {item.isPaymentTransfer && (
+          <div
+            style={{
+              margin: '16px 0 4px',
+              padding: '10px 14px',
+              background: 'rgba(245,158,11,0.12)',
+              borderRadius: 10,
+              fontSize: 12,
+              color: '#92400E',
+              fontWeight: 500,
+              lineHeight: 1.5,
+              display: 'flex',
+              gap: 8,
+              alignItems: 'flex-start',
+            }}
+          >
+            <span style={{ flexShrink: 0 }}>⚠️</span>
+            <span>
+              PAYCO·카카오페이 등 간편결제 이체는 <strong>자동충전 금액이 포함</strong>될 수 있어요.
+              실제 사용한 금액으로 직접 수정해주세요.
+            </span>
+          </div>
+        )}
+
         {/* 금액 입력 */}
         <div
           style={{

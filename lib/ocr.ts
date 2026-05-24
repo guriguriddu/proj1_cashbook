@@ -1,5 +1,5 @@
 import { ExtractedTransaction } from '@/types'
-import { suggestCategory, EXCLUDE_KEYWORDS } from '@/constants/categories'
+import { suggestCategory, EXCLUDE_KEYWORDS, isPaymentService } from '@/constants/categories'
 import { generateId, getTodayDate } from '@/lib/storage'
 
 // OCR 결과에서 거래 내역 파싱
@@ -64,8 +64,9 @@ function extractAmount(text: string): number {
   return 0
 }
 
-// 제외 대상인지 확인
+// 제외 대상인지 확인 (간편결제 서비스는 실제 소비이므로 제외하지 않음)
 function isExcludedTransaction(text: string): { excluded: boolean; reason?: string } {
+  if (isPaymentService(text)) return { excluded: false }
   const lowerText = text.toLowerCase()
   for (const keyword of EXCLUDE_KEYWORDS) {
     if (lowerText.includes(keyword.toLowerCase())) {

@@ -141,9 +141,19 @@ export const DEFAULT_CATEGORIES: Category[] = [
   },
 ]
 
+// 간편결제 서비스 키워드 (이체처럼 보여도 실제 소비 — 제외 금지)
+const PAYMENT_SERVICE_KEYWORDS: string[] = [
+  'PAYCO', 'payco', '페이코',
+  '카카오페이', 'kakaopay',
+  '네이버페이', 'naverpay',
+  '토스결제', '토스페이',
+  '삼성페이', '애플페이',
+  'L.pay', 'L페이', '엘페이',
+]
+
 // 제외 대상 키워드 (지출이 아닌 항목)
 export const EXCLUDE_KEYWORDS: string[] = [
-  '계좌이체', '이체', '송금',
+  '계좌이체',
   '카드값', '카드대금', '결제대금',
   '내 계좌', '본인계좌', '내계좌',
   '환불', '취소', '반품',
@@ -152,6 +162,10 @@ export const EXCLUDE_KEYWORDS: string[] = [
   '이자', '배당',
   '대출', '상환',
 ]
+
+export function isPaymentService(text: string): boolean {
+  return PAYMENT_SERVICE_KEYWORDS.some(kw => text.includes(kw))
+}
 
 // 카테고리 ID로 카테고리 찾기
 export function getCategoryById(id: string): Category | undefined {

@@ -127,6 +127,11 @@ export default function PhotoUploadPage() {
           extracted = parseOcrText(ocrText);
         }
         allTransactions.push(...extracted);
+
+        // 다음 이미지 처리 전 1.5초 대기 (RPM 한도 방지)
+        if (i < images.length - 1 && images[i + 1]?.file) {
+          await new Promise(r => setTimeout(r, 1500));
+        }
       } catch (error) {
         console.error(`이미지 ${i + 1} OCR 실패:`, error);
         const errorMessage = error instanceof Error ? error.message : 'OCR 처리 실패';

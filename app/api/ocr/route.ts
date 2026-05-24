@@ -1,5 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+const MAX_RETRIES = 3
+const BASE_DELAY_MS = 1000
+
+async function callGeminiWithRetry(apiKey: string, body: string): Promise<Response> {
+  let lastResponse: Response | null = null
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      }
+    )
+
+    if (response.status !== 429 && response.status !== 503) {
+      return response
+    }
+
+    lastResponse = response
+
+    if (attempt < MAX_RETRIES) {
+      // Retry-After 헤더 우선, 없으면 exponential backoff
+      const retryAfter = response.headers.get('Retry-After')
+      const delayMs = retryAfter
+        ? parseInt(retryAfter) * 1000
+        : BASE_DELAY_MS * Math.pow(2, attempt)
+      console.log(`Gemini API ${response.status} — ${attempt + 1}번째 재시도, ${delayMs}ms 대기`)
+      await new Promise(r => setTimeout(r, delayMs))
+    }
+  }
+
+  return lastResponse!
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -9,29 +45,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '이미지가 없습니다' }, { status: 400 })
     }
 
-    // 이미지를 base64로 변환
     const bytes = await file.arrayBuffer()
     const base64Image = Buffer.from(bytes).toString('base64')
 
-    // Gemini API 호출
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
       return NextResponse.json({ error: 'API 키가 설정되지 않았습니다' }, { status: 500 })
     }
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [
+    const requestBody = JSON.stringify({
+      contents: [
+        {
+          parts: [
             {
-              parts: [
-                {
-                  text: `이 이미지는 카드 결제 내역 또는 토스 사용 내역 캡쳐입니다.
+              text: `이 이미지는 카드 결제 내역 또는 토스 사용 내역 캡쳐입니다.
 이미지에서 모든 거래 내역을 추출하고 카테고리를 분류해주세요.
 
 중요: 날짜에 년도가 표시되어 있지 않으면 현재 년도인 ${new Date().getFullYear()}년으로 가정해주세요.
@@ -63,35 +90,37 @@ export async function POST(request: NextRequest) {
 카테고리: cafe
 ---
 
-모든 거래 내역을 빠짐없이 추출해주세요. (계좌이체, 송금, 입금, 환불, 충전 등도 포함)`
-                },
-                {
-                  inline_data: {
-                    mime_type: file.type || 'image/jpeg',
-                    data: base64Image
-                  }
-                }
-              ]
-            }
+모든 거래 내역을 빠짐없이 추출해주세요. (계좌이체, 송금, 입금, 환불, 충전 등도 포함)`,
+            },
+            {
+              inline_data: {
+                mime_type: file.type || 'image/jpeg',
+                data: base64Image,
+              },
+            },
           ],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 2048,
-          }
-        })
-      }
-    )
+        },
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 2048,
+      },
+    })
+
+    const response = await callGeminiWithRetry(apiKey, requestBody)
 
     if (!response.ok) {
       const errorData = await response.json()
       console.error('Gemini API 에러:', errorData)
 
-      // 에러 유형에 따른 메시지
       let errorMessage = 'OCR 처리 실패'
-      if (errorData.error?.code === 429) {
+      const errCode = errorData.error?.code
+      if (errCode === 429) {
         errorMessage = 'API 요청 한도 초과 - 잠시 후 다시 시도해주세요'
-      } else if (errorData.error?.code === 503) {
+      } else if (errCode === 503) {
         errorMessage = '서버가 바쁩니다 - 잠시 후 다시 시도해주세요'
+      } else if (errCode === 404) {
+        errorMessage = 'OCR 모델을 찾을 수 없습니다 - 관리자에게 문의해주세요'
       }
 
       return NextResponse.json(

@@ -48,6 +48,7 @@ export default function MyPage() {
   // 편집 상태
   const [editing, setEditing] = useState<string | null>(null);
   const [goalSheetOpen, setGoalSheetOpen] = useState(false);
+  const [showSavingsInfo, setShowSavingsInfo] = useState(false);
 
   // 예산에서 계산
   const totalBudget = budget ? Object.values(budget.categoryBudgets).reduce((a, v) => a + v, 0) : 0;
@@ -318,49 +319,46 @@ export default function MyPage() {
 
         {/* 3. 월 예상 저축액 섹션 */}
         <CardSection title="월 예상 저축액">
-          {savingsInvestmentBudget > 0 && (
-            <div
-              style={{
-                margin: '0 12px 6px',
-                padding: '10px 12px',
-                background: T.accentSoft,
-                borderRadius: 10,
-                display: 'flex',
-                gap: 8,
-                alignItems: 'flex-start',
-                fontSize: 12,
-                lineHeight: 1.5,
-                color: '#0F5132',
-                fontWeight: 500,
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0, marginTop: 1 }}>
-                <circle cx="7" cy="7" r="6" stroke="#0F5132" strokeWidth="1.4" />
-                <path d="M7 6v4M7 4v.5" stroke="#0F5132" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
-              <span>
-                예산 안의 <b>저축 {formatWon(savingsInvestmentBudget)}</b>은 월 예산에서 빼고, 저축액에 자동으로 포함했어요.
-              </span>
-            </div>
-          )}
           <FormulaRow label="월 수익" value={formatWon(monthlyIncome)} />
           <FormulaRow
-            label="월 예산"
+            label="월 소비 예산"
             value={formatWon(monthlyBudget)}
             action="예산 탭"
             external
             onTap={() => router.push('/budget')}
           />
           <DividerRow />
-          <FormulaRow
-            label="월 예상 저축액"
-            value={formatWon(monthlySavings)}
-            valueColor={monthlySavings < 0 ? T.danger : T.accent}
-            big
-          />
+
+          {/* 월 예상 저축액 row — ! 버튼 포함 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px' }}>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: T.text, letterSpacing: '-0.01em' }}>
+                월 예상 저축액
+              </span>
+              <button
+                onClick={() => setShowSavingsInfo(true)}
+                style={{
+                  width: 18, height: 18, borderRadius: 9,
+                  background: totalBudget > monthlyIncome ? '#F59E0B' : T.accent,
+                  color: '#fff', border: 0, cursor: 'pointer',
+                  fontSize: 11, fontWeight: 800, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                !
+              </button>
+            </div>
+            <span style={{
+              fontSize: 20, fontWeight: 800,
+              color: monthlySavings < 0 ? T.danger : T.accent,
+              letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums',
+            }}>
+              {formatWon(monthlySavings)}
+            </span>
+          </div>
 
           {/* 저축률 진행바 */}
-          <div style={{ padding: '8px 16px 14px' }}>
+          <div style={{ padding: '2px 16px 14px' }}>
             <div
               style={{
                 display: 'flex',
@@ -372,7 +370,7 @@ export default function MyPage() {
                 color: T.textSec,
               }}
             >
-              <span>저축률</span>
+              <span>수익 대비 저축률</span>
               <span
                 style={{
                   color: savingsRate < 0 ? T.danger : savingsRate >= 30 ? T.accent : T.text,
@@ -380,12 +378,12 @@ export default function MyPage() {
                   fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                {Math.max(0, savingsRate).toFixed(1)}%
+                {Math.max(0, savingsRate).toFixed(0)}%
               </span>
             </div>
-            <ProgressBar value={Math.max(0, savingsRate)} height={6} />
+            <ProgressBar value={Math.max(0, Math.min(100, savingsRate))} height={6} />
             <div style={{ marginTop: 8, fontSize: 11, color: T.textTer }}>
-              연 예상 저축액 <b style={{ color: T.textSec, fontWeight: 700 }}>{formatWon(yearlySavings)}</b>
+              월 수익 {formatWon(monthlyIncome)} 중 {Math.max(0, savingsRate).toFixed(0)}% 저축 · 연 예상 저축 <b style={{ color: T.textSec }}>{formatWon(yearlySavings)}</b>
             </div>
           </div>
         </CardSection>
@@ -482,6 +480,48 @@ export default function MyPage() {
           onPick={(key) => setEditing(key)}
           onClose={() => setGoalSheetOpen(false)}
         />
+      )}
+
+      {/* 저축액 계산 내역 시트 */}
+      {showSavingsInfo && (
+        <BottomSheet open onClose={() => setShowSavingsInfo(false)} title="저축액 계산 내역" height="48%">
+          <div style={{ padding: '0 20px 32px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ borderRadius: 14, overflow: 'hidden', border: `1px solid ${T.divider}` }}>
+              {savingCategoryBudget > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: `1px solid ${T.divider}` }}>
+                  <span style={{ fontSize: 14, color: T.textSec, fontWeight: 600 }}>🐷 저축 카테고리 예산</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: T.accent }}>+{formatWon(savingCategoryBudget)}</span>
+                </div>
+              )}
+              {totalBudget > monthlyIncome ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: `1px solid ${T.divider}` }}>
+                  <span style={{ fontSize: 14, color: T.textSec, fontWeight: 600 }}>⚠️ 예산 초과</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: T.danger }}>−{formatWon(totalBudget - monthlyIncome)}</span>
+                </div>
+              ) : monthlyIncome > totalBudget ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: `1px solid ${T.divider}` }}>
+                  <span style={{ fontSize: 14, color: T.textSec, fontWeight: 600 }}>💰 수익 여유분</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: T.accent }}>+{formatWon(monthlyIncome - totalBudget)}</span>
+                </div>
+              ) : null}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '14px 16px',
+                background: monthlySavings < 0 ? T.dangerSoft : T.accentSoft,
+              }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>예상 저축액</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: monthlySavings < 0 ? T.danger : T.accent, fontVariantNumeric: 'tabular-nums' }}>
+                  {formatWon(monthlySavings)}
+                </span>
+              </div>
+            </div>
+            {totalBudget > monthlyIncome && (
+              <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.65 }}>
+                총 예산이 월 수익보다 <b style={{ color: T.danger }}>{formatWon(totalBudget - monthlyIncome)}</b> 많아서 저축액이 줄었어요. 예산 탭에서 카테고리 예산을 줄이면 저축액이 늘어납니다.
+              </div>
+            )}
+          </div>
+        </BottomSheet>
       )}
     </Screen>
   );

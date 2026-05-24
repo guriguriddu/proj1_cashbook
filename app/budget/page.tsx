@@ -254,6 +254,34 @@ export default function BudgetPage() {
         {/* Big goal card for selected period */}
         <PeriodGoalCard info={info} goal={goal} used={used} incomeExceeded={incomeExceeded} />
 
+        {/* 수익 미설정 안내 */}
+        {period === 'month' && monthlyIncome === 0 && (
+          <div style={{ padding: '0 20px 8px' }}>
+            <button
+              onClick={() => router.push('/mypage')}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '12px 16px',
+                background: T.warnSoft,
+                border: `1px solid #F59E0B44`,
+                borderRadius: 14,
+                cursor: 'pointer',
+                textAlign: 'left',
+                fontFamily: 'Pretendard, system-ui, sans-serif',
+              }}
+            >
+              <span style={{ fontSize: 18 }}>💡</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#92400E' }}>월 수익을 설정하면 예산 초과 여부를 알려드려요</div>
+                <div style={{ fontSize: 11, color: '#B45309', marginTop: 2 }}>마이페이지에서 설정 →</div>
+              </div>
+            </button>
+          </div>
+        )}
+
         {/* Category-level monthly budgets */}
         {period === 'month' && (
           <div style={{ padding: '8px 20px 16px' }}>
@@ -366,16 +394,31 @@ export default function BudgetPage() {
             </div>
 
             {editMode && (
-              <div
-                style={{
-                  marginTop: 10,
-                  fontSize: 12,
-                  color: T.textTer,
-                  lineHeight: 1.5,
-                  padding: '0 4px',
-                }}
-              >
-                수정할 카테고리를 탭하세요.
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 12, color: T.textTer, lineHeight: 1.5, padding: '0 4px' }}>
+                  수정할 카테고리를 탭하세요.
+                </div>
+                <button
+                  onClick={() => router.push('/categories')}
+                  style={{
+                    width: '100%',
+                    border: `1px dashed ${T.accent}`,
+                    borderRadius: 12,
+                    padding: '12px 16px',
+                    background: T.accentSoft,
+                    color: T.accent,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    fontFamily: 'Pretendard, system-ui, sans-serif',
+                  }}
+                >
+                  + 카테고리 직접 추가
+                </button>
               </div>
             )}
           </div>

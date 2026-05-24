@@ -11,12 +11,12 @@ import {
   PrimaryButton,
   ProgressBar,
 } from '@/components/ui';
-import { useBudget } from '@/hooks/useSupabaseData';
+import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
 import { useAuth } from '@/contexts/AuthContext';
 
 // 금액 포맷 함수
 function formatWon(n: number): string {
-  return '₩' + Math.abs(n).toLocaleString('ko-KR');
+  return '₩' + Math.floor(Math.abs(n)).toLocaleString('ko-KR');
 }
 
 function formatGoalAmount(n: number): string {
@@ -26,24 +26,24 @@ function formatGoalAmount(n: number): string {
     return man > 0 ? `${eok}억 ${man.toLocaleString()}만원` : `${eok}억원`;
   }
   if (n >= 10000) return `${Math.floor(n / 10000).toLocaleString()}만원`;
-  return `${n.toLocaleString()}원`;
+  return `${Math.floor(n).toLocaleString()}원`;
 }
 
 export default function MyPage() {
   const router = useRouter();
   const { user, signOut } = useAuth();
   const { budget, loading: budgetLoading } = useBudget();
+  const { settings, loading: goalLoading, save: saveGoal } = useGoalSettings();
 
   const handleLogout = async () => {
     await signOut();
     router.push('/login');
   };
 
-  // 목표 설정 상태
-  const [monthlyIncome, setMonthlyIncome] = useState(4_000_000);
-  const [targetAmount, setTargetAmount] = useState(100_000_000);
-  const [currentAssets, setCurrentAssets] = useState(0);
-  const [targetMonths, setTargetMonths] = useState(36);
+  const monthlyIncome = settings.monthlyIncome || 4_000_000;
+  const targetAmount = settings.goalAmount || 100_000_000;
+  const currentAssets = settings.currentAssets || 0;
+  const targetMonths = settings.goalMonths || 36;
 
   // 편집 상태
   const [editing, setEditing] = useState<string | null>(null);
@@ -51,9 +51,9 @@ export default function MyPage() {
 
   // 예산에서 계산
   const totalBudget = budget ? Object.values(budget.categoryBudgets).reduce((a, v) => a + v, 0) : 0;
-  const finance = budget ? (budget.categoryBudgets['finance'] || 0) : 0;
-  const monthlyBudget = totalBudget - finance;
-  const savingsInvestmentBudget = finance;
+  const savingCategoryBudget = budget ? (budget.categoryBudgets['saving'] || 0) : 0;
+  const monthlyBudget = totalBudget - savingCategoryBudget;
+  const savingsInvestmentBudget = savingCategoryBudget;
 
   // 계산된 값들
   const yearlyIncome = monthlyIncome * 12;
@@ -108,7 +108,7 @@ export default function MyPage() {
       unit: '원',
       step: 100000,
       value: monthlyIncome,
-      set: setMonthlyIncome,
+      set: (v: number) => saveGoal({ ...settings, monthlyIncome: v }),
       presets: [
         { value: 2500000, label: '250만' },
         { value: 3000000, label: '300만' },
@@ -122,7 +122,7 @@ export default function MyPage() {
       unit: '원',
       step: 1000000,
       value: targetAmount,
-      set: setTargetAmount,
+      set: (v: number) => saveGoal({ ...settings, goalAmount: v }),
       presets: [
         { value: 50000000, label: '5,000만' },
         { value: 100000000, label: '1억' },
@@ -135,7 +135,7 @@ export default function MyPage() {
       unit: '원',
       step: 1000000,
       value: currentAssets,
-      set: setCurrentAssets,
+      set: (v: number) => saveGoal({ ...settings, currentAssets: v }),
       presets: [
         { value: 0, label: '0원' },
         { value: 10000000, label: '1,000만' },
@@ -150,7 +150,7 @@ export default function MyPage() {
       min: 1,
       max: 600,
       value: targetMonths,
-      set: setTargetMonths,
+      set: (v: number) => saveGoal({ ...settings, goalMonths: v }),
       presets: [
         { value: 12, label: '1년' },
         { value: 24, label: '2년' },
@@ -161,7 +161,7 @@ export default function MyPage() {
     },
   };
 
-  if (budgetLoading) {
+  if (budgetLoading || goalLoading) {
     return (
       <Screen>
         <div style={{ padding: 20, color: T.textSec }}>로딩 중...</div>
@@ -339,7 +339,7 @@ export default function MyPage() {
                 <path d="M7 6v4M7 4v.5" stroke="#0F5132" strokeWidth="1.4" strokeLinecap="round" />
               </svg>
               <span>
-                예산 안의 <b>저축·투자 {formatWon(savingsInvestmentBudget)}</b>은 월 예산에서 빼고, 저축액에 자동으로 포함했어요.
+                예산 안의 <b>저축 {formatWon(savingsInvestmentBudget)}</b>은 월 예산에서 빼고, 저축액에 자동으로 포함했어요.
               </span>
             </div>
           )}

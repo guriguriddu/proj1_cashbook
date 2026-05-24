@@ -17,7 +17,7 @@ import {
   getCurrentMonth,
 } from '@/lib/supabase-storage';
 import * as storage from '@/lib/supabase-storage';
-import { useBudget } from '@/hooks/useSupabaseData';
+import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
 import type { Budget } from '@/types';
 
@@ -84,11 +84,15 @@ function formatWonShort(amount: number): string {
 export default function BudgetPage() {
   const router = useRouter();
   const { budget, loading: budgetLoading, refresh: refreshBudget } = useBudget();
+  const { settings } = useGoalSettings();
+  const monthlyIncome = settings.monthlyIncome;
   const [period, setPeriod] = useState<PeriodType>('month');
   const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [used, setUsed] = useState(0);
+  const [incomeExceeded, setIncomeExceeded] = useState(false);
+  const [pendingBudget, setPendingBudget] = useState<Budget | null>(null);
 
   const currentMonth = getCurrentMonth();
 
@@ -248,7 +252,7 @@ export default function BudgetPage() {
 
       <ScreenBody>
         {/* Big goal card for selected period */}
-        <PeriodGoalCard info={info} goal={goal} used={used} />
+        <PeriodGoalCard info={info} goal={goal} used={used} incomeExceeded={incomeExceeded} />
 
         {/* Category-level monthly budgets */}
         {period === 'month' && (
@@ -382,19 +386,67 @@ export default function BudgetPage() {
         </div>
       </ScreenBody>
 
+      {pendingBudget && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            zIndex: 1000, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', padding: 20,
+          }}
+          onClick={() => setPendingBudget(null)}
+        >
+          <div
+            style={{
+              background: T.bg, borderRadius: 20,
+              padding: '24px 20px 20px', width: '100%', maxWidth: 320,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>예산 확인</div>
+            <div style={{ fontSize: 14, color: T.textSec, lineHeight: 1.6, marginBottom: 20 }}>
+              월 예산 합계가 실수익(₩{monthlyIncome.toLocaleString('ko-KR')})보다 높습니다.<br />
+              다시 한 번 확인해주세요.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <SecondaryButton onClick={() => setPendingBudget(null)} style={{ flex: 1 }}>
+                재확인
+              </SecondaryButton>
+              <PrimaryButton
+                onClick={async () => {
+                  await storage.saveBudget(pendingBudget);
+                  refreshBudget();
+                  setIncomeExceeded(true);
+                  setPendingBudget(null);
+                }}
+                style={{ flex: 1, background: T.danger }}
+              >
+                그대로 적용
+              </PrimaryButton>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editing && (
         <CategoryBudgetSheet
           cat={DEFAULT_CATEGORIES.find((c) => c.id === editing)!}
           value={budget.categoryBudgets[editing] || 0}
           onClose={() => setEditing(null)}
           onSave={async (v) => {
-            const newBudget = {
+            const newBudget: Budget = {
               ...budget,
               categoryBudgets: { ...budget.categoryBudgets, [editing]: v },
             };
-            await storage.saveBudget(newBudget);
-            refreshBudget();
-            setEditing(null);
+            const newTotal = Object.values(newBudget.categoryBudgets).reduce((a, b) => a + b, 0);
+            if (monthlyIncome > 0 && newTotal > monthlyIncome) {
+              setPendingBudget(newBudget);
+              setEditing(null);
+            } else {
+              await storage.saveBudget(newBudget);
+              refreshBudget();
+              setEditing(null);
+              setIncomeExceeded(false);
+            }
           }}
         />
       )}
@@ -450,10 +502,12 @@ function PeriodGoalCard({
   info,
   goal,
   used,
+  incomeExceeded,
 }: {
   info: { title: string; sub: string; short: string };
   goal: number;
   used: number;
+  incomeExceeded?: boolean;
 }) {
   const pct = goal > 0 ? (used / goal) * 100 : 0;
   const remaining = goal - used;
@@ -547,6 +601,25 @@ function PeriodGoalCard({
             {remaining >= 0 ? formatWonShort(remaining) : '-' + formatWonShort(Math.abs(remaining))}
           </span>
         </div>
+
+        {incomeExceeded && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: '8px 12px',
+              background: 'rgba(252,165,165,0.18)',
+              borderRadius: 8,
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#FCA5A5',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            ⚠️ 예산 합계가 실수익을 초과합니다
+          </div>
+        )}
       </div>
     </div>
   );

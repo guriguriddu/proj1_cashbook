@@ -64,8 +64,9 @@ export async function POST(request: NextRequest) {
 ★ 절대 제외하지 말 것: PAYCO결제, 카카오페이, 네이버페이, 토스, 삼성페이, 애플페이로 나가는 금액.
   "내 하나계좌 → PAYCO결제 -70,000원" 같은 항목은 반드시 포함. 사용처는 "PAYCO결제"로 기재.
 
-포함 대상: 카드결제, ATM출금, 간편결제 이체, 구독/정기결제, 모든 출금(-) 항목
-제외 대상: 내 계좌끼리 이동, 월급/이자/환급 입금(+), 주식/적금 이체
+포함 대상: 카드결제, ATM출금, 간편결제 이체, 구독/정기결제, 모든 출금(-) 항목, 개인에게 보내는 이체(예: 입주청소, 과외비 등)
+제외 대상: 내 계좌끼리 단순 이동(예: 하나→KB국민 내 계좌), 입금(+)/월급/이자/환급, 주식/적금 이체
+취소(strikethrough) 표시된 항목은 제외
 
 날짜에 년도가 없으면 ${new Date().getFullYear()}년으로 가정.
 
@@ -99,7 +100,7 @@ food, cafe, shopping, transport, fixed, telecom, insurance, education, travel, c
       ],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 8192,
       },
     })
 

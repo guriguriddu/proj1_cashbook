@@ -109,6 +109,7 @@ export function createDefaultBudget(): Budget {
     annual: 12000000, // 연 1200만원
     monthlyBudgets,
     categoryBudgets,
+    monthlyCategoryBudgets: {},
   }
 }
 

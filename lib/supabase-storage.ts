@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/client';
-import { Expense, Budget, Category, AppSettings } from '@/types';
+import { Expense, Budget, BudgetScope, Category, AppSettings } from '@/types';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
 
 // Supabase 클라이언트 (타입 추론 문제 해결을 위해 any 사용)
@@ -54,6 +54,7 @@ interface CategoryBudgetRow {
   budget_id: string;
   category_id: string;
   amount: number;
+  month: string | null; // NULL = 기본 예산, 'YYYY-MM' = 월별 오버라이드
 }
 
 interface UserSettingsRow {
@@ -339,8 +340,17 @@ export async function getBudget(): Promise<Budget> {
   });
 
   const categoryBudgets: { [key: string]: number } = {};
+  const monthlyCategoryBudgets: { [month: string]: { [catId: string]: number } } = {};
+
   ((categoryData || []) as CategoryBudgetRow[]).forEach((c) => {
-    categoryBudgets[c.category_id] = c.amount;
+    if (!c.month) {
+      // 기본 예산 (month IS NULL)
+      categoryBudgets[c.category_id] = c.amount;
+    } else {
+      // 월별 오버라이드
+      if (!monthlyCategoryBudgets[c.month]) monthlyCategoryBudgets[c.month] = {};
+      monthlyCategoryBudgets[c.month][c.category_id] = c.amount;
+    }
   });
 
   return {
@@ -348,6 +358,7 @@ export async function getBudget(): Promise<Budget> {
     annual: budgetData.annual,
     monthlyBudgets,
     categoryBudgets,
+    monthlyCategoryBudgets,
   };
 }
 
@@ -397,22 +408,46 @@ export async function saveBudget(budget: Budget): Promise<void> {
     await supabase.from('monthly_budgets').insert(monthlyInserts);
   }
 
-  // 카테고리별 예산 저장
+  // 기본 카테고리 예산 저장 (month IS NULL)
   const categoryInserts = Object.entries(budget.categoryBudgets).map(
     ([categoryId, amount]) => ({
       budget_id: budgetData.id,
       category_id: categoryId,
       amount,
+      month: null,
     })
   );
 
   if (categoryInserts.length > 0) {
+    // 기본 예산(month IS NULL)만 삭제 후 재삽입
     await supabase
       .from('category_budgets')
       .delete()
-      .eq('budget_id', budgetData.id);
+      .eq('budget_id', budgetData.id)
+      .is('month', null);
 
     await supabase.from('category_budgets').insert(categoryInserts);
+  }
+
+  // 월별 오버라이드 저장
+  if (budget.monthlyCategoryBudgets) {
+    const monthlyOverrideInserts: object[] = [];
+    Object.entries(budget.monthlyCategoryBudgets).forEach(([month, cats]) => {
+      Object.entries(cats).forEach(([categoryId, amount]) => {
+        monthlyOverrideInserts.push({ budget_id: budgetData.id, category_id: categoryId, amount, month });
+      });
+    });
+
+    if (monthlyOverrideInserts.length > 0) {
+      // 기존 월별 오버라이드 삭제 후 재삽입
+      await supabase
+        .from('category_budgets')
+        .delete()
+        .eq('budget_id', budgetData.id)
+        .not('month', 'is', null);
+
+      await supabase.from('category_budgets').insert(monthlyOverrideInserts);
+    }
   }
 }
 
@@ -438,7 +473,63 @@ export function createDefaultBudget(): Budget {
     annual: 12000000,
     monthlyBudgets,
     categoryBudgets,
+    monthlyCategoryBudgets: {},
   };
+}
+
+// 특정 월의 카테고리 예산 (월별 오버라이드 → 기본 예산 순서로 조회)
+export function getCategoryBudgetForMonth(budget: Budget, month: string, categoryId: string): number {
+  return budget.monthlyCategoryBudgets?.[month]?.[categoryId]
+    ?? budget.categoryBudgets[categoryId]
+    ?? 0;
+}
+
+// 카테고리 예산을 월별 범위로 저장
+export async function saveCategoryBudgetScope(
+  categoryId: string,
+  amount: number,
+  month: string, // YYYY-MM
+  scope: BudgetScope
+): Promise<void> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const year = parseInt(month.split('-')[0]);
+
+  // budgets 레코드 조회/생성
+  const { data: budgetData } = await supabase
+    .from('budgets')
+    .upsert({ user_id: user.id, year, annual: 0 }, { onConflict: 'user_id,year' })
+    .select()
+    .single();
+
+  if (!budgetData) throw new Error('Budget record not found');
+
+  if (scope === 'this_month') {
+    // 해당 월만 오버라이드
+    await supabase.from('category_budgets').upsert(
+      { budget_id: budgetData.id, category_id: categoryId, month, amount },
+      { onConflict: 'budget_id,category_id,month' }
+    );
+  } else {
+    // 이번 달부터 모두: 기본 예산 업데이트 + 해당 월 이후 오버라이드 삭제
+    await supabase
+      .from('category_budgets')
+      .upsert(
+        { budget_id: budgetData.id, category_id: categoryId, month: null, amount },
+        { onConflict: 'budget_id,category_id,month' }
+      );
+
+    // 해당 월 이후의 월별 오버라이드 삭제
+    await supabase
+      .from('category_budgets')
+      .delete()
+      .eq('budget_id', budgetData.id)
+      .eq('category_id', categoryId)
+      .gte('month', month)
+      .not('month', 'is', null);
+  }
 }
 
 export async function getMonthlyBudget(month: string): Promise<number> {
@@ -715,7 +806,7 @@ export async function getMonthlySummary(month: string) {
 
   const categories = await getCategories();
   for (const cat of categories) {
-    const catBudget = budget.categoryBudgets[cat.id] || 0;
+    const catBudget = getCategoryBudgetForMonth(budget, month, cat.id);
     const catSpent = await getCategoryTotal(month, cat.id);
     categoryBreakdown[cat.id] = {
       budget: catBudget,

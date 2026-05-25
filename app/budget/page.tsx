@@ -13,71 +13,13 @@ import {
   BottomSheet,
   PrimaryButton,
 } from '@/components/ui';
-import {
-  getCurrentMonth,
-} from '@/lib/supabase-storage';
 import * as storage from '@/lib/supabase-storage';
 import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
-import type { Budget } from '@/types';
+import type { Budget, BudgetScope } from '@/types';
 
-type PeriodType = 'year' | 'half' | 'quarter' | 'month';
-
-// Resolve a period (type + offset from "current") to a display label + actual values.
-function periodInfo(type: PeriodType, offset: number) {
-  const now = new Date();
-  const baseY = now.getFullYear();
-  const baseM = now.getMonth() + 1;
-
-  if (type === 'year') {
-    const y = baseY + offset;
-    return { title: `${y}년 예산`, sub: '연간 예산', short: `${y}년`, year: y };
-  }
-  if (type === 'half') {
-    const currentHalf = baseM <= 6 ? 0 : 1;
-    const idx = baseY * 2 + currentHalf + offset;
-    const y = Math.floor(idx / 2);
-    const h = ((idx % 2) + 2) % 2;
-    return {
-      title: `${y} ${h === 0 ? '상' : '하'}반기 예산`,
-      sub: '6개월 예산',
-      short: `${y} ${h === 0 ? '상' : '하'}반기`,
-      year: y,
-      half: (h + 1) as 1 | 2,
-    };
-  }
-  if (type === 'quarter') {
-    const currentQ = Math.ceil(baseM / 3);
-    const idx = baseY * 4 + (currentQ - 1) + offset;
-    const y = Math.floor(idx / 4);
-    const q = (((idx % 4) + 4) % 4) + 1;
-    return {
-      title: `${y} ${q}분기 예산`,
-      sub: '3개월 예산',
-      short: `${y} ${q}분기`,
-      year: y,
-      quarter: q as 1 | 2 | 3 | 4,
-    };
-  }
-  // month
-  const idx = baseY * 12 + (baseM - 1) + offset;
-  const y = Math.floor(idx / 12);
-  const m = (((idx % 12) + 12) % 12) + 1;
-  return {
-    title: `${y}년 ${m}월 예산`,
-    sub: '월 예산',
-    short: `${y}년 ${m}월`,
-    year: y,
-    month: m,
-    monthKey: `${y}-${String(m).padStart(2, '0')}`,
-  };
-}
-
-// 원화 포맷 함수
 function formatWonShort(amount: number): string {
-  if (amount >= 10000) {
-    return (amount / 10000).toFixed(0) + '만원';
-  }
+  if (amount >= 10000) return (amount / 10000).toFixed(0) + '만원';
   return '₩' + Math.abs(Math.round(amount)).toLocaleString('ko-KR');
 }
 
@@ -90,8 +32,8 @@ export default function BudgetPage() {
   useEffect(() => {
     storage.getCategories().then(setAllCategories).catch(() => {});
   }, []);
+
   const monthlyIncome = settings.monthlyIncome;
-  const [period, setPeriod] = useState<PeriodType>('month');
   const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -99,32 +41,19 @@ export default function BudgetPage() {
   const [incomeExceeded, setIncomeExceeded] = useState(false);
   const [pendingBudget, setPendingBudget] = useState<Budget | null>(null);
 
-  const currentMonth = getCurrentMonth();
-
-  const changePeriod = (next: PeriodType) => {
-    setPeriod(next);
-    setOffset(0);
-  };
-
-  // 사용 금액 계산 (비동기)
-  const info = periodInfo(period, offset);
+  // Compute current month from offset
+  const now = new Date();
+  const baseY = now.getFullYear();
+  const baseM = now.getMonth() + 1;
+  const idx = baseY * 12 + (baseM - 1) + offset;
+  const y = Math.floor(idx / 12);
+  const m = (((idx % 12) + 12) % 12) + 1;
+  const monthKey = `${y}-${String(m).padStart(2, '0')}`;
+  const monthLabel = `${y}년 ${m}월`;
 
   useEffect(() => {
-    const loadUsed = async () => {
-      let total = 0;
-      if (period === 'year' && 'year' in info) {
-        total = await storage.getYearlyTotal(info.year);
-      } else if (period === 'half' && 'half' in info && 'year' in info) {
-        total = await storage.getHalfYearTotal(info.year, info.half as 1 | 2);
-      } else if (period === 'quarter' && 'quarter' in info && 'year' in info) {
-        total = await storage.getQuarterlyTotal(info.year, info.quarter as 1 | 2 | 3 | 4);
-      } else if (period === 'month' && 'monthKey' in info && info.monthKey) {
-        total = await storage.getMonthlyTotal(info.monthKey);
-      }
-      setUsed(total);
-    };
-    loadUsed();
-  }, [period, offset]);
+    storage.getMonthlyTotal(monthKey).then(setUsed);
+  }, [monthKey]);
 
   if (budgetLoading || !budget) {
     return (
@@ -134,79 +63,23 @@ export default function BudgetPage() {
     );
   }
 
-  // Calculate totals
-  const monthlyTotal = Object.values(budget.categoryBudgets).reduce(
-    (a, v) => a + v,
-    0
-  );
-  const defaultGoal = (type: PeriodType) =>
-    type === 'year'
-      ? monthlyTotal * 12
-      : type === 'half'
-      ? monthlyTotal * 6
-      : type === 'quarter'
-      ? monthlyTotal * 3
-      : monthlyTotal;
-
-  const goal = defaultGoal(period);
-
-  const periods = [
-    { id: 'year' as const, label: '연간' },
-    { id: 'half' as const, label: '반기' },
-    { id: 'quarter' as const, label: '분기' },
-    { id: 'month' as const, label: '월별' },
-  ];
-
   const categories = (allCategories.length > 0 ? allCategories : DEFAULT_CATEGORIES).filter(
     (c) => c.id !== 'other'
+  );
+  const allCats = allCategories.length > 0 ? allCategories : DEFAULT_CATEGORIES;
+  const goal = allCats.reduce(
+    (sum, c) => sum + storage.getCategoryBudgetForMonth(budget, monthKey, c.id),
+    0
   );
 
   return (
     <Screen>
       <AppHeader title="목표 · 예산" onBack={() => router.push('/')} />
 
-      {/* period selector */}
-      <div style={{ padding: '8px 20px 12px' }}>
-        <div
-          style={{
-            display: 'flex',
-            gap: 6,
-            padding: 4,
-            background: T.bgMuted,
-            borderRadius: 12,
-          }}
-        >
-          {periods.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => changePeriod(p.id)}
-              style={{
-                flex: 1,
-                border: period === p.id ? `2px solid ${T.accent}` : '2px solid transparent',
-                padding: '8px 0',
-                borderRadius: 8,
-                background: period === p.id ? T.bg : 'transparent',
-                fontFamily: 'Pretendard, system-ui, sans-serif',
-                fontSize: 13,
-                fontWeight: period === p.id ? 700 : 600,
-                color: period === p.id ? T.accent : T.textTer,
-                cursor: 'pointer',
-                letterSpacing: '-0.01em',
-                boxShadow:
-                  period === p.id ? '0 2px 6px rgba(0,0,0,0.1)' : 'none',
-                transition: 'all .15s',
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* period stepper */}
+      {/* Month navigator */}
       <div
         style={{
-          padding: '0 20px 12px',
+          padding: '8px 20px 12px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -222,9 +95,9 @@ export default function BudgetPage() {
               letterSpacing: '-0.02em',
             }}
           >
-            {info.short}
+            {monthLabel}
           </div>
-          {offset !== 0 && (
+          {offset !== 0 ? (
             <button
               onClick={() => setOffset(0)}
               style={{
@@ -238,19 +111,11 @@ export default function BudgetPage() {
                 letterSpacing: '-0.01em',
               }}
             >
-              현재로 돌아가기
+              이번 달로 돌아가기
             </button>
-          )}
-          {offset === 0 && (
-            <div
-              style={{
-                fontSize: 11,
-                color: T.textTer,
-                fontWeight: 500,
-                marginTop: 2,
-              }}
-            >
-              현재
+          ) : (
+            <div style={{ fontSize: 11, color: T.textTer, fontWeight: 500, marginTop: 2 }}>
+              이번 달
             </div>
           )}
         </div>
@@ -258,11 +123,16 @@ export default function BudgetPage() {
       </div>
 
       <ScreenBody padBottom={100}>
-        {/* Big goal card for selected period */}
-        <PeriodGoalCard info={info} goal={goal} used={used} incomeExceeded={incomeExceeded} />
+        {/* Monthly hero card */}
+        <MonthlyGoalCard
+          monthLabel={monthLabel}
+          goal={goal}
+          used={used}
+          incomeExceeded={incomeExceeded}
+        />
 
         {/* 수익 미설정 안내 */}
-        {period === 'month' && monthlyIncome === 0 && (
+        {monthlyIncome === 0 && (
           <div style={{ padding: '0 20px 8px' }}>
             <button
               onClick={() => router.push('/mypage')}
@@ -282,60 +152,64 @@ export default function BudgetPage() {
             >
               <span style={{ fontSize: 18 }}>💡</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#92400E' }}>월 수익을 설정하면 예산 초과 여부를 알려드려요</div>
-                <div style={{ fontSize: 11, color: '#B45309', marginTop: 2 }}>마이페이지에서 설정 →</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#92400E' }}>
+                  월 수익을 설정하면 예산 초과 여부를 알려드려요
+                </div>
+                <div style={{ fontSize: 11, color: '#B45309', marginTop: 2 }}>
+                  마이페이지에서 설정 →
+                </div>
               </div>
             </button>
           </div>
         )}
 
-        {/* Category-level monthly budgets */}
-        {period === 'month' && (
-          <div style={{ padding: '8px 20px 16px' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 8,
-              }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.textTer }}>
-                {info.short.split(' ').slice(-1)[0]} 카테고리 예산
-              </div>
-              <button
-                onClick={() => setEditMode(!editMode)}
-                style={{
-                  border: 0,
-                  cursor: 'pointer',
-                  background: editMode ? T.accent : 'transparent',
-                  color: editMode ? '#fff' : T.accent,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  letterSpacing: '-0.01em',
-                  padding: editMode ? '6px 12px' : '6px 0',
-                  borderRadius: 999,
-                  transition: 'all .15s',
-                }}
-              >
-                {editMode ? '완료' : '수정'}
-              </button>
+        {/* Category-level budgets */}
+        <div style={{ padding: '8px 20px 16px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 8,
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.textTer }}>
+              {monthLabel} 카테고리 예산
             </div>
-            <div
+            <button
+              onClick={() => setEditMode(!editMode)}
               style={{
-                background: T.bg,
-                border: `1px solid ${editMode ? T.accent + '55' : T.divider}`,
-                borderRadius: 14,
-                overflow: 'hidden',
-                transition: 'border-color .15s',
+                border: 0,
+                cursor: 'pointer',
+                background: editMode ? T.accent : 'transparent',
+                color: editMode ? '#fff' : T.accent,
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: '-0.01em',
+                padding: editMode ? '6px 12px' : '6px 0',
+                borderRadius: 999,
+                transition: 'all .15s',
               }}
             >
-              {categories.map((c, i) => (
+              {editMode ? '완료' : '수정'}
+            </button>
+          </div>
+          <div
+            style={{
+              background: T.bg,
+              border: `1px solid ${editMode ? T.accent + '55' : T.divider}`,
+              borderRadius: 14,
+              overflow: 'hidden',
+              transition: 'border-color .15s',
+            }}
+          >
+            {categories.map((c, i) => {
+              const effectiveAmt = storage.getCategoryBudgetForMonth(budget, monthKey, c.id);
+              const hasOverride = !!budget.monthlyCategoryBudgets?.[monthKey]?.[c.id];
+              return (
                 <button
                   key={c.id}
-                  onClick={() => {
-                    if (editMode) setEditing(c.id);
-                  }}
+                  onClick={() => { if (editMode) setEditing(c.id); }}
                   disabled={!editMode}
                   style={{
                     width: '100%',
@@ -356,13 +230,7 @@ export default function BudgetPage() {
                 >
                   <CatIcon catId={c.id} size={36} icon={c.icon} color={c.color} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 600,
-                        letterSpacing: '-0.01em',
-                      }}
-                    >
+                    <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>
                       {c.name}
                     </div>
                   </div>
@@ -376,18 +244,16 @@ export default function BudgetPage() {
                         letterSpacing: '-0.02em',
                       }}
                     >
-                      {((budget.categoryBudgets[c.id] || 0) / 10000).toFixed(0)}
-                      만원
+                      {(effectiveAmt / 10000).toFixed(0)}만원
                     </div>
+                    {hasOverride && (
+                      <div style={{ fontSize: 10, color: T.accent, fontWeight: 600, marginTop: 1 }}>
+                        이번 달만
+                      </div>
+                    )}
                   </div>
                   {editMode && (
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 14 14"
-                      fill="none"
-                      style={{ flexShrink: 0 }}
-                    >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
                       <path
                         d="M9.5 1.5l3 3-8 8H1.5v-3l8-8z"
                         stroke={T.accent}
@@ -397,72 +263,89 @@ export default function BudgetPage() {
                     </svg>
                   )}
                 </button>
-              ))}
-            </div>
-
-            {editMode && (
-              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: 12, color: T.textTer, lineHeight: 1.5, padding: '0 4px' }}>
-                  수정할 카테고리를 탭하세요.
-                </div>
-                <button
-                  onClick={() => router.push('/categories')}
-                  style={{
-                    width: '100%',
-                    border: `1px dashed ${T.accent}`,
-                    borderRadius: 12,
-                    padding: '12px 16px',
-                    background: T.accentSoft,
-                    color: T.accent,
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    fontFamily: 'Pretendard, system-ui, sans-serif',
-                  }}
-                >
-                  + 카테고리 직접 추가
-                </button>
-              </div>
-            )}
+              );
+            })}
           </div>
-        )}
+
+          {editMode && (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 12, color: T.textTer, lineHeight: 1.5, padding: '0 4px' }}>
+                수정할 카테고리를 탭하세요.
+              </div>
+              <button
+                onClick={() => router.push('/categories')}
+                style={{
+                  width: '100%',
+                  border: `1px dashed ${T.accent}`,
+                  borderRadius: 12,
+                  padding: '12px 16px',
+                  background: T.accentSoft,
+                  color: T.accent,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                }}
+              >
+                + 카테고리 직접 추가
+              </button>
+            </div>
+          )}
+        </div>
 
         <div style={{ height: 8 }} />
       </ScreenBody>
 
-      {/* 하단 고정 저장 버튼 */}
-      <div style={{
-        position: 'fixed', left: 0, right: 0, bottom: 0,
-        padding: '12px 20px 28px',
-        background: 'linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0))',
-        maxWidth: 512, margin: '0 auto', zIndex: 10,
-      }}>
+      {/* Bottom 완료 button */}
+      <div
+        style={{
+          position: 'fixed',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          padding: '12px 20px 28px',
+          background: 'linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0))',
+          maxWidth: 512,
+          margin: '0 auto',
+          zIndex: 10,
+        }}
+      >
         <SecondaryButton onClick={() => router.push('/')}>완료</SecondaryButton>
       </div>
 
+      {/* Income exceeded confirm */}
       {pendingBudget && (
         <div
           style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-            zIndex: 1000, display: 'flex', alignItems: 'center',
-            justifyContent: 'center', padding: 20,
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
           }}
           onClick={() => setPendingBudget(null)}
         >
           <div
             style={{
-              background: T.bg, borderRadius: 20,
-              padding: '24px 20px 20px', width: '100%', maxWidth: 320,
+              background: T.bg,
+              borderRadius: 20,
+              padding: '24px 20px 20px',
+              width: '100%',
+              maxWidth: 320,
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>예산 확인</div>
             <div style={{ fontSize: 14, color: T.textSec, lineHeight: 1.6, marginBottom: 20 }}>
-              월 예산 합계가 실수익(₩{monthlyIncome.toLocaleString('ko-KR')})보다 높습니다.<br />
+              월 예산 합계가 실수익(₩{monthlyIncome.toLocaleString('ko-KR')})보다 높습니다.
+              <br />
               다시 한 번 확인해주세요.
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -485,41 +368,40 @@ export default function BudgetPage() {
         </div>
       )}
 
-      {editing && (
-        <CategoryBudgetSheet
-          cat={(categories.find((c) => c.id === editing) || DEFAULT_CATEGORIES.find((c) => c.id === editing))!}
-          value={budget.categoryBudgets[editing] || 0}
-          onClose={() => setEditing(null)}
-          onSave={async (v) => {
-            const newBudget: Budget = {
-              ...budget,
-              categoryBudgets: { ...budget.categoryBudgets, [editing]: v },
-            };
-            const newTotal = Object.values(newBudget.categoryBudgets).reduce((a, b) => a + b, 0);
-            if (monthlyIncome > 0 && newTotal > monthlyIncome) {
-              setPendingBudget(newBudget);
-              setEditing(null);
-            } else {
-              await storage.saveBudget(newBudget);
-              refreshBudget();
-              setEditing(null);
-              setIncomeExceeded(false);
-            }
-          }}
-        />
-      )}
+      {editing &&
+        (() => {
+          const cat = (
+            categories.find((c) => c.id === editing) ||
+            DEFAULT_CATEGORIES.find((c) => c.id === editing)
+          )!;
+          const effectiveValue = storage.getCategoryBudgetForMonth(budget, monthKey, editing);
+          const hasExistingOverride = !!budget.monthlyCategoryBudgets?.[monthKey]?.[editing];
+          return (
+            <CategoryBudgetSheet
+              cat={cat}
+              value={effectiveValue}
+              month={monthKey}
+              hasMonthOverride={hasExistingOverride}
+              onClose={() => setEditing(null)}
+              onSave={async (v, scope) => {
+                await storage.saveCategoryBudgetScope(editing, v, monthKey, scope);
+                await refreshBudget();
+                const newTotal = allCats.reduce((sum, c) => {
+                  const amt =
+                    c.id === editing ? v : storage.getCategoryBudgetForMonth(budget, monthKey, c.id);
+                  return sum + amt;
+                }, 0);
+                setIncomeExceeded(monthlyIncome > 0 && newTotal > monthlyIncome);
+                setEditing(null);
+              }}
+            />
+          );
+        })()}
     </Screen>
   );
 }
 
-// ◀ / ▶ stepper buttons
-function StepBtn({
-  onClick,
-  dir,
-}: {
-  onClick: () => void;
-  dir: 'prev' | 'next';
-}) {
+function StepBtn({ onClick, dir }: { onClick: () => void; dir: 'prev' | 'next' }) {
   return (
     <button
       onClick={onClick}
@@ -555,14 +437,13 @@ function StepBtn({
   );
 }
 
-// Hero card for the active period
-function PeriodGoalCard({
-  info,
+function MonthlyGoalCard({
+  monthLabel,
   goal,
   used,
   incomeExceeded,
 }: {
-  info: { title: string; sub: string; short: string };
+  monthLabel: string;
   goal: number;
   used: number;
   incomeExceeded?: boolean;
@@ -580,7 +461,6 @@ function PeriodGoalCard({
           padding: 22,
         }}
       >
-        {/* 헤더: 기간 + 사용률 */}
         <div
           style={{
             display: 'flex',
@@ -589,9 +469,7 @@ function PeriodGoalCard({
             marginBottom: 12,
           }}
         >
-          <div style={{ fontSize: 14, fontWeight: 600, opacity: 0.8 }}>
-            {info.short}
-          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, opacity: 0.8 }}>{monthLabel}</div>
           <div
             style={{
               padding: '4px 10px',
@@ -606,24 +484,14 @@ function PeriodGoalCard({
           </div>
         </div>
 
-        {/* 메인: 사용 금액 */}
         <div style={{ marginBottom: 6 }}>
           <MoneyText value={used} size={36} weight={800} color="#fff" />
         </div>
 
-        {/* 서브: 예산 중 */}
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 500,
-            opacity: 0.7,
-            marginBottom: 16,
-          }}
-        >
+        <div style={{ fontSize: 14, fontWeight: 500, opacity: 0.7, marginBottom: 16 }}>
           예산 {formatWonShort(goal)} 중
         </div>
 
-        {/* 프로그레스 바 */}
         <div
           style={{
             height: 8,
@@ -643,7 +511,6 @@ function PeriodGoalCard({
           />
         </div>
 
-        {/* 남은 예산 */}
         <div
           style={{
             display: 'flex',
@@ -656,7 +523,9 @@ function PeriodGoalCard({
         >
           <span style={{ opacity: 0.6 }}>남은 예산</span>
           <span style={{ color: remaining >= 0 ? '#86EFAC' : '#FCA5A5' }}>
-            {remaining >= 0 ? formatWonShort(remaining) : '-' + formatWonShort(Math.abs(remaining))}
+            {remaining >= 0
+              ? formatWonShort(remaining)
+              : '-' + formatWonShort(Math.abs(remaining))}
           </span>
         </div>
 
@@ -683,19 +552,25 @@ function PeriodGoalCard({
   );
 }
 
-// Bottom sheet to edit a single category's monthly budget.
 function CategoryBudgetSheet({
   cat,
   value,
+  month,
+  hasMonthOverride,
   onClose,
   onSave,
 }: {
   cat: { id: string; name: string; color: string };
   value: number;
+  month: string;
+  hasMonthOverride: boolean;
   onClose: () => void;
-  onSave: (v: number) => void;
+  onSave: (v: number, scope: BudgetScope) => void;
 }) {
   const [v, setV] = useState(value);
+  const [scope, setScope] = useState<BudgetScope>(
+    hasMonthOverride ? 'this_month' : 'this_and_forward'
+  );
   const presets = [10, 20, 30, 50, 100];
   const adjust = (delta: number) => setV(Math.max(0, v + delta));
 
@@ -705,14 +580,13 @@ function CategoryBudgetSheet({
     setV(Math.max(0, Math.floor(Number(digits) || 0)));
   };
 
+  const [y, mo] = month.split('-');
+  const monthLabel = `${y}년 ${parseInt(mo)}월`;
+
   return (
-    <BottomSheet
-      open
-      onClose={onClose}
-      title={`${cat.name} 월 예산`}
-      height="55%"
-    >
+    <BottomSheet open onClose={onClose} title={`${cat.name} 예산`} height="70%">
       <div style={{ padding: '0 20px 24px' }}>
+        {/* 금액 입력 */}
         <div
           style={{
             padding: '20px 0',
@@ -727,17 +601,9 @@ function CategoryBudgetSheet({
               justifyContent: 'center',
               gap: 4,
               fontVariantNumeric: 'tabular-nums',
-              maxWidth: '100%',
             }}
           >
-            <span
-              style={{
-                fontSize: 20,
-                fontWeight: 700,
-                color: T.textSec,
-                flexShrink: 0,
-              }}
-            >
+            <span style={{ fontSize: 20, fontWeight: 700, color: T.textSec, flexShrink: 0 }}>
               ₩
             </span>
             <input
@@ -761,35 +627,21 @@ function CategoryBudgetSheet({
                 padding: 0,
               }}
             />
-            <span
-              style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color: T.textSec,
-                flexShrink: 0,
-              }}
-            >
+            <span style={{ fontSize: 18, fontWeight: 700, color: T.textSec, flexShrink: 0 }}>
               원
             </span>
           </div>
-          <div
-            style={{
-              marginTop: 6,
-              fontSize: 13,
-              color: T.textTer,
-              fontWeight: 500,
-            }}
-          >
-            {v >= 10000 ? Math.floor(v / 10000) + '만원' : v.toLocaleString() + '원'}{' '}
-            / 월
+          <div style={{ marginTop: 6, fontSize: 13, color: T.textTer, fontWeight: 500 }}>
+            {v >= 10000 ? Math.floor(v / 10000) + '만원' : v.toLocaleString() + '원'} / 월
           </div>
         </div>
 
+        {/* 조절 버튼 */}
         <div
           style={{
             display: 'flex',
             gap: 8,
-            padding: '20px 0 8px',
+            padding: '16px 0 8px',
             justifyContent: 'space-between',
           }}
         >
@@ -811,25 +663,21 @@ function CategoryBudgetSheet({
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {d > 0 ? '+' : '−'}
-              {Math.abs(d) / 10000}만
+              {d > 0 ? '+' : '−'}{Math.abs(d) / 10000}만
             </button>
           ))}
         </div>
 
+        {/* 빠른 설정 */}
         <div
           style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: T.textTer,
-            margin: '20px 0 8px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
+            display: 'flex',
+            gap: 6,
+            flexWrap: 'wrap',
+            paddingBottom: 16,
+            borderBottom: `1px solid ${T.divider}`,
           }}
         >
-          빠른 설정
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {presets.map((p) => (
             <button
               key={p}
@@ -851,8 +699,77 @@ function CategoryBudgetSheet({
           ))}
         </div>
 
-        <div style={{ marginTop: 24 }}>
-          <PrimaryButton onClick={() => onSave(v)}>저장</PrimaryButton>
+        {/* 적용 범위 */}
+        <div style={{ paddingTop: 16 }}>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: T.textTer,
+              marginBottom: 10,
+              letterSpacing: '-0.01em',
+            }}
+          >
+            적용 범위
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {(
+              [
+                { value: 'this_month', label: '이번 달만', sub: monthLabel },
+                {
+                  value: 'this_and_forward',
+                  label: '이번 달부터 모두',
+                  sub: `${monthLabel} 이후 기본 예산으로 적용`,
+                },
+              ] as { value: BudgetScope; label: string; sub: string }[]
+            ).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setScope(opt.value)}
+                style={{
+                  width: '100%',
+                  border: `2px solid ${scope === opt.value ? T.accent : T.divider}`,
+                  borderRadius: 12,
+                  padding: '12px 14px',
+                  background: scope === opt.value ? T.accentSoft : T.bg,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                }}
+              >
+                <div
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    flexShrink: 0,
+                    border: `2px solid ${scope === opt.value ? T.accent : T.divider}`,
+                    background: scope === opt.value ? T.accent : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {scope === opt.value && (
+                    <div
+                      style={{ width: 6, height: 6, borderRadius: 3, background: '#fff' }}
+                    />
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{opt.label}</div>
+                  <div style={{ fontSize: 11, color: T.textSec, marginTop: 2 }}>{opt.sub}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <PrimaryButton onClick={() => onSave(v, scope)}>적용</PrimaryButton>
         </div>
       </div>
     </BottomSheet>

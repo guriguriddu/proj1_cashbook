@@ -30,9 +30,15 @@ export interface Budget {
     [month: string]: number // "2025-01": 1000000
   }
   categoryBudgets: {
-    [categoryId: string]: number // "food": 300000 (월 예산)
+    [categoryId: string]: number // 기본 예산 (월별 오버라이드 없을 때 적용)
+  }
+  monthlyCategoryBudgets: {
+    [month: string]: { [categoryId: string]: number } // 월별 카테고리 예산 오버라이드
   }
 }
+
+// 카테고리 예산 적용 범위
+export type BudgetScope = 'this_month' | 'this_and_forward'
 
 // OCR 추출 결과 (검수 전)
 export interface ExtractedTransaction {

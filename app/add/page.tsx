@@ -98,6 +98,23 @@ export default function AddPage() {
             title="직접 입력"
             desc="금액과 사용처를 직접 입력"
           />
+
+          {/* 엑셀 가져오기 */}
+          <ChoiceCard
+            onClick={() => router.push('/add/excel')}
+            iconBg="#E8F5E9"
+            iconColor="#16A34A"
+            icon={
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                <rect x="4" y="3" width="14" height="22" rx="2" stroke="currentColor" strokeWidth="2" />
+                <path d="M4 3l14 0 6 6v16a2 2 0 01-2 2H6a2 2 0 01-2-2V3z" stroke="currentColor" strokeWidth="2" fill="none" />
+                <path d="M18 3v6h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <path d="M8 14l3 3 3-3M11 17v-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            }
+            title="엑셀 가져오기"
+            desc="뱅크샐러드 내보내기 파일 (.xlsx)"
+          />
         </div>
 
         <div

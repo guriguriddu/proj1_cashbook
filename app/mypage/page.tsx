@@ -13,6 +13,7 @@ import {
 } from '@/components/ui';
 import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
 import { useAuth } from '@/contexts/AuthContext';
+import { getCategoryBudgetForMonth, getCurrentMonth } from '@/lib/supabase-storage';
 
 // 금액 포맷 함수
 function formatWon(n: number): string {
@@ -50,9 +51,15 @@ export default function MyPage() {
   const [goalSheetOpen, setGoalSheetOpen] = useState(false);
   const [showSavingsInfo, setShowSavingsInfo] = useState(false);
 
-  // 예산에서 계산
-  const totalBudget = budget ? Object.values(budget.categoryBudgets).reduce((a, v) => a + v, 0) : 0;
-  const savingCategoryBudget = budget ? (budget.categoryBudgets['saving'] || 0) : 0;
+  // 예산에서 계산 (현재 월 기준 오버라이드 적용)
+  const currentMonth = getCurrentMonth();
+  const totalBudget = budget
+    ? Object.keys({ ...budget.categoryBudgets, ...budget.monthlyCategoryBudgets?.[currentMonth] }).reduce(
+        (sum, catId) => sum + getCategoryBudgetForMonth(budget, currentMonth, catId),
+        0
+      )
+    : 0;
+  const savingCategoryBudget = budget ? getCategoryBudgetForMonth(budget, currentMonth, 'saving') : 0;
   const monthlyBudget = totalBudget - savingCategoryBudget;
   const savingsInvestmentBudget = savingCategoryBudget;
 
@@ -237,7 +244,7 @@ export default function MyPage() {
               </div>
             </div>
             <button
-              onClick={() => router.push('/categories')}
+              onClick={() => router.push('/budget')}
               style={{
                 width: '100%',
                 marginTop: 16,
@@ -254,7 +261,7 @@ export default function MyPage() {
                 justifyContent: 'space-between',
               }}
             >
-              <span>카테고리 관리</span>
+              <span>예산 / 카테고리 관리</span>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -450,7 +457,18 @@ export default function MyPage() {
         <div style={{ height: 20 }} />
       </ScreenBody>
 
-      {/* 편집 시트 */}
+      {/* 목표 수정 시트 — editing 중일 때는 숨김 */}
+      {goalSheetOpen && !editing && (
+        <GoalEditSheet
+          targetAmount={targetAmount}
+          targetMonths={targetMonths}
+          currentAssets={currentAssets}
+          onPick={(key) => setEditing(key)}
+          onClose={() => setGoalSheetOpen(false)}
+        />
+      )}
+
+      {/* 편집 시트 — 목표 수정 시트 위에 단독으로 표시 */}
       {editing && (() => {
         const f = fields[editing];
         return (
@@ -470,17 +488,6 @@ export default function MyPage() {
           />
         );
       })()}
-
-      {/* 목표 수정 시트 */}
-      {goalSheetOpen && (
-        <GoalEditSheet
-          targetAmount={targetAmount}
-          targetMonths={targetMonths}
-          currentAssets={currentAssets}
-          onPick={(key) => setEditing(key)}
-          onClose={() => setGoalSheetOpen(false)}
-        />
-      )}
 
       {/* 저축액 계산 내역 시트 */}
       {showSavingsInfo && (
@@ -1271,7 +1278,7 @@ function NumberEditSheet({
         )}
 
         <div style={{ marginTop: 24 }}>
-          <PrimaryButton onClick={() => onSave(v)}>저장</PrimaryButton>
+          <PrimaryButton onClick={() => onSave(v)}>적용</PrimaryButton>
         </div>
       </div>
     </BottomSheet>

@@ -14,8 +14,8 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: 'home', href: '/', label: '홈', icon: 'home' },
   { id: 'history', href: '/expenses', label: '내역', icon: 'list' },
-  { id: 'add', href: '/add', label: '입력', icon: 'plus' },
-  { id: 'budget', href: '/budget', label: '예산', icon: 'target' },
+  { id: 'add', href: '/add', label: '추가', icon: 'plus' },
+  { id: 'budget', href: '/budget', label: '예산 설정', icon: 'target' },
   { id: 'mypage', href: '/mypage', label: 'MY', icon: 'user' },
 ];
 

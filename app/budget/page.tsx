@@ -176,23 +176,37 @@ export default function BudgetPage() {
             <div style={{ fontSize: 13, fontWeight: 700, color: T.textTer }}>
               {monthLabel} 카테고리 예산
             </div>
-            <button
-              onClick={() => setEditMode(!editMode)}
-              style={{
-                border: 0,
-                cursor: 'pointer',
-                background: editMode ? T.accent : 'transparent',
-                color: editMode ? '#fff' : T.accent,
-                fontSize: 13,
-                fontWeight: 700,
-                letterSpacing: '-0.01em',
-                padding: editMode ? '6px 12px' : '6px 0',
-                borderRadius: 999,
-                transition: 'all .15s',
-              }}
-            >
-              {editMode ? '완료' : '수정'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => router.push('/categories')}
+                style={{
+                  border: 0, cursor: 'pointer', background: 'transparent',
+                  color: T.textTer, fontSize: 13, fontWeight: 600,
+                  letterSpacing: '-0.01em', padding: '6px 0',
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                }}
+              >
+                카테고리 수정
+              </button>
+              <button
+                onClick={() => setEditMode(!editMode)}
+                style={{
+                  border: 0,
+                  cursor: 'pointer',
+                  background: editMode ? T.accent : 'transparent',
+                  color: editMode ? '#fff' : T.accent,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: '-0.01em',
+                  padding: editMode ? '6px 12px' : '6px 0',
+                  borderRadius: 999,
+                  transition: 'all .15s',
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                }}
+              >
+                {editMode ? '완료' : '수정'}
+              </button>
+            </div>
           </div>
           <div
             style={{
@@ -268,31 +282,10 @@ export default function BudgetPage() {
           </div>
 
           {editMode && (
-            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ fontSize: 12, color: T.textTer, lineHeight: 1.5, padding: '0 4px' }}>
+            <div style={{ marginTop: 8, padding: '0 4px' }}>
+              <div style={{ fontSize: 12, color: T.textTer, lineHeight: 1.5 }}>
                 수정할 카테고리를 탭하세요.
               </div>
-              <button
-                onClick={() => router.push('/categories')}
-                style={{
-                  width: '100%',
-                  border: `1px dashed ${T.accent}`,
-                  borderRadius: 12,
-                  padding: '12px 16px',
-                  background: T.accentSoft,
-                  color: T.accent,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  fontFamily: 'Pretendard, system-ui, sans-serif',
-                }}
-              >
-                + 카테고리 직접 추가
-              </button>
             </div>
           )}
         </div>

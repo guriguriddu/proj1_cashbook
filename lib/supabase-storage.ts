@@ -546,21 +546,18 @@ export async function getCategoryBudget(categoryId: string): Promise<number> {
 
 export async function getCategories(): Promise<Category[]> {
   const supabase = getSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return DEFAULT_CATEGORIES;
 
-  // 커스텀 카테고리만 DB에서 가져옴 (is_default=false)
-  const { data } = await supabase
-    .from('categories')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('is_default', false)
-    .order('sort_order', { ascending: true });
+  const [{ data: catData }, { data: settingsData }] = await Promise.all([
+    supabase.from('categories').select('*').eq('user_id', user.id).eq('is_default', false).order('sort_order', { ascending: true }),
+    supabase.from('user_settings').select('merchant_categories').eq('user_id', user.id).single(),
+  ]);
 
-  const customCategories: Category[] = ((data || []) as CategoryRow[]).map((c) => ({
+  const merchantCats = (settingsData?.merchant_categories as Record<string, string>) || {};
+  const hiddenDefaults: string[] = JSON.parse(merchantCats['__hidden_defaults'] || '[]');
+
+  const customCategories: Category[] = ((catData || []) as CategoryRow[]).map((c) => ({
     id: c.category_id,
     name: c.name,
     icon: c.icon,
@@ -570,7 +567,26 @@ export async function getCategories(): Promise<Category[]> {
     isCustom: true,
   }));
 
-  return [...DEFAULT_CATEGORIES, ...customCategories];
+  const visibleDefaults = DEFAULT_CATEGORIES.filter((c) => !hiddenDefaults.includes(c.id));
+  return [...visibleDefaults, ...customCategories];
+}
+
+export async function hideDefaultCategory(categoryId: string): Promise<void> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data } = await supabase.from('user_settings').select('merchant_categories').eq('user_id', user.id).single();
+  const current: Record<string, string> = (data?.merchant_categories as Record<string, string>) || {};
+  const hidden: string[] = JSON.parse(current['__hidden_defaults'] || '[]');
+  if (!hidden.includes(categoryId)) hidden.push(categoryId);
+  current['__hidden_defaults'] = JSON.stringify(hidden);
+
+  await supabase.from('user_settings').upsert({
+    user_id: user.id,
+    merchant_categories: current,
+    updated_at: new Date().toISOString(),
+  });
 }
 
 export async function addCustomCategory(category: Omit<Category, 'order' | 'isCustom'>): Promise<void> {

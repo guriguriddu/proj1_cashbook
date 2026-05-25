@@ -145,16 +145,34 @@ function ExpensesContent() {
     );
   }
 
-  // Stats data (non-month periods)
-  const activeExpenses = period === 'month' ? monthExpenses : rangeExpenses;
-  const catTotals: Record<string, number> = {};
-  activeExpenses.forEach((e) => {
-    catTotals[e.category] = (catTotals[e.category] || 0) + e.amount;
-  });
-  const totalSpent = Object.values(catTotals).reduce((a, v) => a + v, 0);
-  const catList = DEFAULT_CATEGORIES.filter((c) => catTotals[c.id] > 0).sort(
-    (a, b) => (catTotals[b.id] || 0) - (catTotals[a.id] || 0)
+  // Non-month range data
+  const rangeFiltered = rangeExpenses.filter(
+    (e) => filterCat === 'all' || e.category === filterCat
   );
+  const rangeTotal = rangeFiltered.reduce((a, e) => a + e.amount, 0);
+  const rangePresentCats = new Set(rangeExpenses.map((e) => e.category));
+  const rangeChips = [
+    { id: 'all', name: '전체', color: T.text },
+    ...DEFAULT_CATEGORIES.filter((c) => rangePresentCats.has(c.id)).map((c) => ({
+      id: c.id, name: c.name, color: c.color,
+    })),
+  ];
+
+  type GroupedExpense = { date: string | null; items: Expense[] };
+  function buildGrouped(expenses: Expense[]): GroupedExpense[] {
+    if (sort === 'date') {
+      const byDate: Record<string, Expense[]> = {};
+      expenses.forEach((e) => {
+        if (!byDate[e.date]) byDate[e.date] = [];
+        byDate[e.date].push(e);
+      });
+      return Object.keys(byDate)
+        .sort((a, b) => b.localeCompare(a))
+        .map((date) => ({ date, items: byDate[date].sort((a, b) => b.amount - a.amount) }));
+    }
+    return [{ date: null, items: [...expenses].sort((a, b) => b.amount - a.amount) }];
+  }
+  const rangeGrouped = buildGrouped(rangeFiltered);
 
   // Monthly list data
   const filtered = monthExpenses.filter(
@@ -162,21 +180,7 @@ function ExpensesContent() {
   );
   const filteredTotal = filtered.reduce((a, e) => a + e.amount, 0);
   const count = filtered.length;
-
-  type GroupedExpense = { date: string | null; items: Expense[] };
-  let grouped: GroupedExpense[] = [];
-  if (sort === 'date') {
-    const byDate: Record<string, Expense[]> = {};
-    filtered.forEach((e) => {
-      if (!byDate[e.date]) byDate[e.date] = [];
-      byDate[e.date].push(e);
-    });
-    grouped = Object.keys(byDate)
-      .sort((a, b) => b.localeCompare(a))
-      .map((date) => ({ date, items: byDate[date].sort((a, b) => b.amount - a.amount) }));
-  } else {
-    grouped = [{ date: null, items: [...filtered].sort((a, b) => b.amount - a.amount) }];
-  }
+  const grouped = buildGrouped(filtered);
 
   const presentCats = new Set(monthExpenses.map((e) => e.category));
   const chips = [
@@ -369,25 +373,56 @@ function ExpensesContent() {
           </ScreenBody>
         </>
       ) : (
-        /* ── 분기/반기/연간 통계 뷰 ── */
+        /* ── 분기/반기/연간 리스트 뷰 ── */
         <>
           {/* Period stepper */}
-          <div style={{ padding: '10px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <StepBtn onClick={() => setOffset(offset - 1)} dir="prev" />
-            <div style={{ textAlign: 'center', flex: 1 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: T.text, letterSpacing: '-0.02em' }}>
-                {info.label}
+          <div style={{ padding: '8px 20px 12px', background: T.bg }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <StepBtn onClick={() => setOffset(offset - 1)} dir="prev" />
+              <div style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.textSec, letterSpacing: '-0.01em' }}>
+                  {info.label}
+                </div>
+                {offset !== 0 && (
+                  <button
+                    onClick={() => setOffset(0)}
+                    style={{ border: 0, background: 'transparent', cursor: 'pointer', color: T.accent, fontSize: 11, fontWeight: 600, padding: '2px 0' }}
+                  >
+                    현재로 돌아가기
+                  </button>
+                )}
               </div>
-              {offset !== 0 && (
-                <button
-                  onClick={() => setOffset(0)}
-                  style={{ border: 0, background: 'transparent', cursor: 'pointer', color: T.accent, fontSize: 11, fontWeight: 600, padding: '2px 0' }}
-                >
-                  현재로 돌아가기
-                </button>
-              )}
+              <StepBtn onClick={() => setOffset(offset + 1)} dir="next" />
             </div>
-            <StepBtn onClick={() => setOffset(offset + 1)} dir="next" />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <MoneyText value={rangeTotal} size={28} weight={800} />
+              <div style={{ fontSize: 12, color: T.textTer, fontVariantNumeric: 'tabular-nums' }}>
+                {rangeFiltered.length}건
+              </div>
+            </div>
+          </div>
+
+          {/* Category chips */}
+          <div style={{ padding: '4px 16px 12px', display: 'flex', gap: 6, overflowX: 'auto', whiteSpace: 'nowrap', borderBottom: `1px solid ${T.divider}` }}>
+            {rangeChips.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setFilterCat(c.id)}
+                style={{
+                  border: 0, padding: '8px 14px', borderRadius: 999,
+                  background: filterCat === c.id ? T.text : T.bgMuted,
+                  color: filterCat === c.id ? '#fff' : T.textSec,
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                  fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em',
+                  cursor: 'pointer', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                {c.id !== 'all' && (
+                  <span style={{ width: 6, height: 6, borderRadius: 3, background: c.color, opacity: filterCat === c.id ? 0.9 : 0.7 }} />
+                )}
+                {c.name}
+              </button>
+            ))}
           </div>
 
           <ScreenBody>
@@ -395,58 +430,31 @@ function ExpensesContent() {
               <div style={{ padding: '40px 20px', textAlign: 'center', color: T.textSec, fontSize: 14 }}>
                 로딩 중...
               </div>
-            ) : rangeExpenses.length === 0 ? (
+            ) : rangeGrouped.length === 0 ? (
               <div style={{ padding: '64px 20px', textAlign: 'center', color: T.textTer, fontSize: 14, fontWeight: 500 }}>
                 {info.label}에는<br />거래 내역이 없어요
               </div>
             ) : (
-              <div style={{ padding: '0 20px 16px' }}>
-                {/* Hero total card */}
-                <div style={{ background: T.text, color: '#fff', borderRadius: 20, padding: '20px 22px', marginBottom: 16 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, opacity: 0.7, marginBottom: 6 }}>
-                    {info.label} 총 지출
-                  </div>
-                  <MoneyText value={totalSpent} size={32} weight={800} color="#fff" />
-                  <div style={{ marginTop: 8, fontSize: 13, opacity: 0.6, fontVariantNumeric: 'tabular-nums' }}>
-                    {rangeExpenses.length}건
-                  </div>
-                </div>
-
-                {/* Category breakdown */}
-                <div style={{ fontSize: 13, fontWeight: 700, color: T.textTer, marginBottom: 10 }}>
-                  카테고리별 지출
-                </div>
-                <div style={{ background: T.bg, border: `1px solid ${T.divider}`, borderRadius: 14, overflow: 'hidden' }}>
-                  {catList.map((cat, i) => {
-                    const amt = catTotals[cat.id] || 0;
-                    const pct = totalSpent > 0 ? (amt / totalSpent) * 100 : 0;
-                    return (
-                      <div
-                        key={cat.id}
-                        style={{ padding: '14px 16px', borderBottom: i < catList.length - 1 ? `1px solid ${T.divider}` : 'none' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                          <CatIcon catId={cat.id} size={32} icon={cat.icon} color={cat.color} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em' }}>{cat.name}</div>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-                              {formatWon(amt)}
-                            </div>
-                            <div style={{ fontSize: 11, color: T.textTer, fontWeight: 600, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
-                              {pct.toFixed(1)}%
-                            </div>
-                          </div>
-                        </div>
-                        <div style={{ height: 5, background: T.bgMuted, borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: pct + '%', background: cat.color, borderRadius: 3 }} />
-                        </div>
+              rangeGrouped.map((g, gi) => (
+                <div key={g.date || gi} style={{ marginTop: 4 }}>
+                  {gi > 0 && g.date && <div style={{ height: 1, background: T.divider, margin: '6px 20px 0' }} />}
+                  {g.date && (
+                    <div style={{ padding: '14px 20px 6px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, letterSpacing: '-0.01em' }}>
+                        {formatDate(g.date)}
                       </div>
-                    );
-                  })}
+                      <div style={{ fontSize: 12, fontWeight: 600, color: T.textTer, fontVariantNumeric: 'tabular-nums' }}>
+                        {formatWon(g.items.reduce((a, e) => a + e.amount, 0))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    {g.items.map((e) => (
+                      <ExpenseRow key={e.id} e={e} onClick={() => setEditingExpense(e)} />
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ))
             )}
           </ScreenBody>
         </>

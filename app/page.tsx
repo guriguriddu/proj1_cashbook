@@ -72,7 +72,7 @@ export default function HomePage() {
   const pct = budgetTotal > 0 ? (usedTotal / budgetTotal) * 100 : 0;
   const over = remaining < 0;
 
-  // 카테고리별 사용량 정렬 (사용량 내림차순)
+  // 카테고리별 사용량 정렬 (예산 높은 순, 최대 8개)
   const categoryRows = categories
     .filter((c) => c.id !== 'other')
     .map((cat) => {
@@ -82,7 +82,8 @@ export default function HomePage() {
       const p = cap > 0 ? (used / cap) * 100 : 0;
       return { cat, used, cap, pct: p, over: used > cap };
     })
-    .sort((a, b) => b.used - a.used);
+    .sort((a, b) => b.cap - a.cap)
+    .slice(0, 8);
 
   // 카테고리 ID → 카테고리 객체 맵 (커스텀 카테고리 icon/color 조회용)
   const catLookup = new Map(categories.map((c) => [c.id, c]));
@@ -317,7 +318,7 @@ export default function HomePage() {
                 letterSpacing: '-0.02em',
               }}
             >
-              카테고리
+              카테고리 별 사용량
             </div>
             <button
               onClick={() => router.push('/budget')}
@@ -335,15 +336,24 @@ export default function HomePage() {
             </button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {categoryRows.map((r) => (
-              <CategoryRow
+          <div
+            style={{
+              background: T.bg,
+              border: `1px solid ${T.divider}`,
+              borderRadius: 16,
+              overflow: 'hidden',
+            }}
+          >
+            {categoryRows.map((r, i) => (
+              <div
                 key={r.cat.id}
-                row={r}
-                onClick={() =>
-                  router.push(`/expenses?category=${r.cat.id}`)
-                }
-              />
+                style={{ borderBottom: i < categoryRows.length - 1 ? `1px solid ${T.divider}` : 'none' }}
+              >
+                <CategoryRow
+                  row={r}
+                  onClick={() => router.push(`/expenses?category=${r.cat.id}`)}
+                />
+              </div>
             ))}
           </div>
         </div>

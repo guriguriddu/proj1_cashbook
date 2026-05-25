@@ -481,10 +481,9 @@ function CategoryRow({
         width: '100%',
         border: 0,
         background: 'transparent',
-        padding: '10px 4px',
+        padding: '14px 16px',
         cursor: 'pointer',
         textAlign: 'left',
-        borderRadius: 12,
       }}
     >
       <div

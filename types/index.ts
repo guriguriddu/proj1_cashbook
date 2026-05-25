@@ -57,6 +57,7 @@ export interface ExtractedTransaction {
 export interface AppSettings {
   defaultCategories: string[] // 기본 표시할 카테고리 순서
   homeCategoryOrder: string[] // 홈 화면에 표시할 카테고리 ID 순서
+  defaultTransferCategory?: string // 타인 이체 기본 카테고리
   lastUpdated: string
 }
 

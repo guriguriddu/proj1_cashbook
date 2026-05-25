@@ -657,9 +657,11 @@ export async function getSettings(): Promise<AppSettings> {
     return { defaultCategories: [], homeCategoryOrder: [], lastUpdated: '' };
   }
 
+  const merchantCats = (data.merchant_categories as Record<string, string>) || {};
   return {
     defaultCategories: [],
     homeCategoryOrder: data.home_category_order || [],
+    defaultTransferCategory: merchantCats['__transfer_default'] ?? 'food',
     lastUpdated: data.updated_at,
   };
 }
@@ -682,6 +684,27 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
     console.error('Error saving settings:', error);
     throw error;
   }
+}
+
+export async function saveDefaultTransferCategory(categoryId: string): Promise<void> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data } = await supabase
+    .from('user_settings')
+    .select('merchant_categories')
+    .eq('user_id', user.id)
+    .single();
+
+  const current: Record<string, string> = (data?.merchant_categories as Record<string, string>) || {};
+  current['__transfer_default'] = categoryId;
+
+  await supabase.from('user_settings').upsert({
+    user_id: user.id,
+    merchant_categories: current,
+    updated_at: new Date().toISOString(),
+  });
 }
 
 export async function getHomeCategoryOrder(): Promise<string[]> {

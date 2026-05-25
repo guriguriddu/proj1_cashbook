@@ -24,6 +24,7 @@ const CAT_MAP: Record<string, string> = {
 
 export type RowStatus =
   | 'include'           // 일반 지출 → 가져올 항목
+  | 'dutch_pay'         // n빵 감지됨 → 가져올 항목 (순금액)
   | 'transfer_nudge'    // 이체(타인) → 확인필요, 기본 선택
   | 'finance_nudge'     // 금융 지출 → 확인필요, 기본 선택
   | 'duplicate_suspect' // 중복 의심 → 확인필요, 기본 미선택
@@ -47,6 +48,12 @@ export interface ParsedRow {
   selected: boolean;
   refundPartnerIdx?: number;
   dupExpenseId?: string;
+  dutchPay?: {
+    originalAmount: number;
+    receivedTotal: number;
+    myShare: number;
+    peopleCount: number;
+  };
 }
 
 export interface ExcelParseResult {
@@ -74,7 +81,47 @@ function merchantSimilar(a: string, b: string): boolean {
   return na === nb || na.includes(nb) || nb.includes(na);
 }
 
-// 파일에서 존재하는 월 목록만 추출 (파일 선택 후 월 피커에 사용)
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+// n빵 감지: food 지출 + 7일 내 입금 이체에서 N등분 패턴 탐색
+function findDutchPay(
+  expenseAmount: number,
+  expenseDate: string,
+  pool: { date: string; amount: number; used: boolean }[]
+): { N: number; transfers: typeof pool; receivedTotal: number } | null {
+  const deadline = addDays(expenseDate, 7);
+  const candidates = pool.filter(
+    (t) => !t.used && t.date >= expenseDate && t.date <= deadline
+  );
+  if (candidates.length === 0) return null;
+
+  let best: { N: number; transfers: typeof pool; receivedTotal: number } | null = null;
+
+  for (let N = 2; N <= 8; N++) {
+    const perPerson = expenseAmount / N;
+    const tolerance = perPerson * 0.15;
+    const matching = candidates.filter((t) => Math.abs(t.amount - perPerson) <= tolerance);
+
+    if (matching.length === 0) continue;
+
+    const receivedTotal = matching.reduce((s, t) => s + t.amount, 0);
+    // 받은 금액이 전체의 30% 이상이어야 의미 있는 n빵
+    if (receivedTotal < expenseAmount * 0.3) continue;
+
+    // 더 많은 매칭이 있는 N을 우선
+    if (!best || matching.length > best.transfers.length) {
+      best = { N, transfers: matching, receivedTotal };
+    }
+  }
+
+  return best;
+}
+
+// 파일에서 존재하는 월 목록만 추출
 export function detectMonths(buffer: ArrayBuffer): string[] {
   const wb = XLSX.read(buffer, { type: 'array' });
   const ws = wb.Sheets['가계부 내역'];
@@ -93,13 +140,29 @@ export function detectMonths(buffer: ArrayBuffer): string[] {
 export function parseExcel(
   buffer: ArrayBuffer,
   month: string,
-  existingExpenses: Expense[]
+  existingExpenses: Expense[],
+  defaultTransferCategory = 'food'
 ): ExcelParseResult {
   const wb = XLSX.read(buffer, { type: 'array' });
   const ws = wb.Sheets['가계부 내역'];
   if (!ws) throw new Error('가계부 내역 시트를 찾을 수 없습니다.');
 
   const rawRows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 }).slice(1) as unknown[][];
+
+  // 0단계: 파일 전체에서 입금 이체 수집 (n빵 감지용, 월 필터 없음)
+  const incomingPool: { date: string; amount: number; used: boolean }[] = [];
+  rawRows.forEach((row) => {
+    const serial = row[0];
+    if (typeof serial !== 'number' || serial < 40000) return;
+    const type = String(row[2] || '');
+    const bigCat = String(row[3] || '');
+    const amount = Number(row[6]);
+    const currency = String(row[7] || 'KRW');
+    if (type === '이체' && amount > 0 && currency === 'KRW' && bigCat !== '내계좌이체') {
+      incomingPool.push({ date: serialToDate(serial), amount, used: false });
+    }
+  });
+
   const parsed: ParsedRow[] = [];
 
   // 1단계: 행별 1차 분류
@@ -184,12 +247,12 @@ export function parseExcel(
         return;
       }
 
-      // 타인 송금 (대분류='이체'): 기타 + 넛지, 기본 선택
+      // 타인 송금 (대분류='이체'): 기본 카테고리 = defaultTransferCategory(기본 식비), 확인필요
       if (bigCat === '이체') {
         parsed.push({
           ...base,
           amount: Math.abs(amount),
-          category: 'other',
+          category: defaultTransferCategory,
           status: 'transfer_nudge',
           nudgeMessage: '타인에게 보낸 이체입니다. 더치페이 등 실소비라면 포함하세요.',
           selected: true,
@@ -227,27 +290,47 @@ export function parseExcel(
       pair.selected = false;
       pair.refundPartnerIdx = refund.idx;
     }
-    // 불일치 → refund_partial 그대로 유지 (확인필요 탭)
   });
 
-  // 3단계: 기존 DB 중복 체크
+  // 3단계: n빵 자동 감지 (식비 2만원 이상)
+  parsed
+    .filter((r) => r.status === 'include' && r.category === 'food' && r.amount >= 20000)
+    .sort((a, b) => a.date.localeCompare(b.date)) // 날짜순으로 처리
+    .forEach((row) => {
+      const match = findDutchPay(row.amount, row.date, incomingPool);
+      if (!match) return;
+
+      match.transfers.forEach((t) => (t.used = true));
+      const myShare = row.amount - match.receivedTotal;
+      row.dutchPay = {
+        originalAmount: row.amount,
+        receivedTotal: match.receivedTotal,
+        myShare,
+        peopleCount: match.N,
+      };
+      row.amount = myShare;
+      row.status = 'dutch_pay';
+      row.nudgeMessage = `n빵 감지 · ${match.N}명 · 받은 금액 ${match.receivedTotal.toLocaleString()}원`;
+    });
+
+  // 4단계: 기존 DB 중복 체크
   const existingThisMonth = existingExpenses.filter((e) => e.date.startsWith(month));
   parsed
-    .filter((r) => r.status === 'include' || r.status === 'finance_nudge' || r.status === 'transfer_nudge')
+    .filter((r) => ['include', 'dutch_pay', 'finance_nudge', 'transfer_nudge'].includes(r.status))
     .forEach((row) => {
       const dup = existingThisMonth.find(
         (e) => e.date === row.date && e.amount === row.amount && merchantSimilar(e.merchant, row.merchant)
       );
       if (dup) {
         row.status = 'duplicate_suspect';
-        row.selected = false; // 기본 미선택 + 경고
+        row.selected = false;
         row.nudgeMessage = `이미 입력된 내역과 같아 보입니다 (${dup.merchant} / ${dup.date})`;
         row.dupExpenseId = dup.id;
       }
     });
 
-  // 4단계: 결과 분류
-  const toInclude = parsed.filter((r) => r.status === 'include');
+  // 5단계: 결과 분류
+  const toInclude = parsed.filter((r) => r.status === 'include' || r.status === 'dutch_pay');
   const needsReview = parsed.filter((r) =>
     ['transfer_nudge', 'finance_nudge', 'duplicate_suspect', 'refund_partial'].includes(r.status)
   );

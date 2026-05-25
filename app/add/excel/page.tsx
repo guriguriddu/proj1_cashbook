@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Screen,
@@ -10,9 +10,16 @@ import {
   PrimaryButton,
   SecondaryButton,
   CatIcon,
+  BottomSheet,
 } from '@/components/ui';
 import { detectMonths, parseExcel, type ParsedRow, type ExcelParseResult } from '@/lib/excel-import';
-import { getExpenses, saveExpenses, generateId } from '@/lib/supabase-storage';
+import {
+  getExpenses,
+  saveExpenses,
+  generateId,
+  getSettings,
+  saveDefaultTransferCategory,
+} from '@/lib/supabase-storage';
 import type { Expense } from '@/types';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
 
@@ -25,6 +32,7 @@ function formatWon(n: number) {
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   include: { label: '포함', color: T.accent },
+  dutch_pay: { label: 'n빵', color: '#F97316' },
   transfer_nudge: { label: '이체', color: '#F59E0B' },
   finance_nudge: { label: '금융', color: '#F59E0B' },
   duplicate_suspect: { label: '중복의심', color: T.danger },
@@ -46,6 +54,15 @@ export default function ExcelImportPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [savedCount, setSavedCount] = useState(0);
   const [error, setError] = useState('');
+
+  // 카테고리 커스터마이징
+  const [defaultTransferCat, setDefaultTransferCat] = useState('food');
+  const [rowCategories, setRowCategories] = useState<Record<number, string>>({});
+  const [catSheetRow, setCatSheetRow] = useState<ParsedRow | null>(null);
+
+  useEffect(() => {
+    getSettings().then((s) => setDefaultTransferCat(s.defaultTransferCategory ?? 'food'));
+  }, []);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -74,12 +91,12 @@ export default function ExcelImportPage() {
     if (!fileBuffer || !selectedMonth) return;
     setStage('processing');
     setError('');
+    setRowCategories({});
     try {
       const existing = await getExpenses();
-      const parsed = parseExcel(fileBuffer, selectedMonth, existing);
+      const parsed = parseExcel(fileBuffer, selectedMonth, existing, defaultTransferCat);
       setResult(parsed);
 
-      // 기본 선택 세트 구성
       const initSelected = new Set<number>();
       [...parsed.toInclude, ...parsed.needsReview].forEach((r) => {
         if (r.selected) initSelected.add(r.idx);
@@ -91,7 +108,7 @@ export default function ExcelImportPage() {
       setError((err as Error).message || '분석 중 오류가 발생했습니다.');
       setStage('upload');
     }
-  }, [fileBuffer, selectedMonth]);
+  }, [fileBuffer, selectedMonth, defaultTransferCat]);
 
   const toggleRow = useCallback((idx: number) => {
     setSelected((prev) => {
@@ -113,7 +130,7 @@ export default function ExcelImportPage() {
         date: r.date,
         amount: r.amount,
         merchant: r.merchant,
-        category: r.category,
+        category: rowCategories[r.idx] ?? r.category,
         memo: r.rawBigCat !== r.rawSmallCat && r.rawSmallCat !== '미분류' ? r.rawSmallCat : '',
         source: 'manual' as const,
         createdAt: new Date().toISOString(),
@@ -125,12 +142,37 @@ export default function ExcelImportPage() {
       setError('저장 중 오류가 발생했습니다. 다시 시도해주세요.');
       setStage('review');
     }
-  }, [result, selected]);
+  }, [result, selected, rowCategories]);
 
   const monthLabel = (m: string) => {
     const [y, mm] = m.split('-');
     return `${y}년 ${parseInt(mm)}월`;
   };
+
+  // 카테고리 변경 적용
+  const applyCategoryChange = useCallback(
+    async (row: ParsedRow, newCat: string, scope: 'this' | 'all') => {
+      if (scope === 'all' && row.status === 'transfer_nudge') {
+        await saveDefaultTransferCategory(newCat);
+        setDefaultTransferCat(newCat);
+        // 현재 결과의 모든 transfer_nudge 행에도 적용
+        if (result) {
+          const allRows = [...result.toInclude, ...result.needsReview];
+          setRowCategories((prev) => {
+            const next = { ...prev };
+            allRows.filter((r) => r.status === 'transfer_nudge').forEach((r) => {
+              next[r.idx] = newCat;
+            });
+            return next;
+          });
+        }
+      } else {
+        setRowCategories((prev) => ({ ...prev, [row.idx]: newCat }));
+      }
+      setCatSheetRow(null);
+    },
+    [result]
+  );
 
   // ── Upload 화면 ──────────────────────────────────────────────
   if (stage === 'upload') {
@@ -139,7 +181,6 @@ export default function ExcelImportPage() {
         <AppHeader title="엑셀 가져오기" onBack={() => router.push('/add')} />
         <ScreenBody>
           <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {/* 안내 */}
             <div style={{ background: T.accentSoft, borderRadius: 16, padding: '16px 18px' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: T.accent, marginBottom: 6 }}>
                 뱅크샐러드 엑셀 가져오기
@@ -150,67 +191,45 @@ export default function ExcelImportPage() {
               </div>
             </div>
 
-            {/* 파일 선택 */}
             <div>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx"
-                onChange={handleFileChange}
-                style={{ display: 'none' }}
-              />
+              <input ref={fileRef} type="file" accept=".xlsx" onChange={handleFileChange} style={{ display: 'none' }} />
               <button
                 onClick={() => fileRef.current?.click()}
                 style={{
-                  width: '100%',
-                  padding: '20px',
+                  width: '100%', padding: '20px',
                   border: `2px dashed ${fileBuffer ? T.accent : T.divider}`,
-                  borderRadius: 16,
-                  background: fileBuffer ? T.accentSoft : T.bgSoft,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 10,
+                  borderRadius: 16, background: fileBuffer ? T.accentSoft : T.bgSoft,
+                  cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
                 }}
               >
                 <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-                  <rect x="6" y="4" width="18" height="28" rx="3" stroke={fileBuffer ? T.accent : T.textTer} strokeWidth="2" />
-                  <path d="M24 4v8h8" stroke={fileBuffer ? T.accent : T.textTer} strokeWidth="2" strokeLinecap="round" />
                   <path d="M6 4l18 0 8 8v20a3 3 0 01-3 3H9a3 3 0 01-3-3V4z" stroke={fileBuffer ? T.accent : T.textTer} strokeWidth="2" fill="none" />
+                  <path d="M24 4v8h8" stroke={fileBuffer ? T.accent : T.textTer} strokeWidth="2" strokeLinecap="round" />
                   <path d="M12 20h12M18 14v12" stroke={fileBuffer ? T.accent : T.textTer} strokeWidth="2" strokeLinecap="round" />
                 </svg>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: fileBuffer ? T.accent : T.text }}>
                     {fileBuffer ? '파일 선택됨 ✓ (다시 선택하려면 탭)' : '.xlsx 파일 선택'}
                   </div>
-                  <div style={{ fontSize: 12, color: T.textTer, marginTop: 4 }}>
-                    뱅크샐러드 내보내기 파일만 지원
-                  </div>
+                  <div style={{ fontSize: 12, color: T.textTer, marginTop: 4 }}>뱅크샐러드 내보내기 파일만 지원</div>
                 </div>
               </button>
             </div>
 
-            {/* 월 선택 */}
             {availableMonths.length > 0 && (
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec, marginBottom: 10 }}>
-                  가져올 월 선택
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec, marginBottom: 10 }}>가져올 월 선택</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {availableMonths.map((m) => (
                     <button
                       key={m}
                       onClick={() => setSelectedMonth(m)}
                       style={{
-                        padding: '10px 16px',
-                        borderRadius: 999,
+                        padding: '10px 16px', borderRadius: 999,
                         border: selectedMonth === m ? `2px solid ${T.accent}` : `1px solid ${T.divider}`,
                         background: selectedMonth === m ? T.accentSoft : T.bg,
                         color: selectedMonth === m ? T.accent : T.text,
-                        fontSize: 14,
-                        fontWeight: 600,
-                        cursor: 'pointer',
+                        fontSize: 14, fontWeight: 600, cursor: 'pointer',
                         fontFamily: 'Pretendard, system-ui, sans-serif',
                       }}
                     >
@@ -227,10 +246,7 @@ export default function ExcelImportPage() {
               </div>
             )}
 
-            <PrimaryButton
-              onClick={handleAnalyze}
-              disabled={!fileBuffer || !selectedMonth}
-            >
+            <PrimaryButton onClick={handleAnalyze} disabled={!fileBuffer || !selectedMonth}>
               분석하기
             </PrimaryButton>
           </div>
@@ -239,19 +255,13 @@ export default function ExcelImportPage() {
     );
   }
 
-  // ── Processing 화면 ──────────────────────────────────────────
+  // ── Processing ──────────────────────────────────────────────
   if (stage === 'processing') {
     return (
       <Screen>
         <AppHeader title="엑셀 가져오기" onBack={() => {}} />
         <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-          <div style={{
-            width: 44, height: 44,
-            border: `3px solid ${T.divider}`,
-            borderTopColor: T.accent,
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-          }} />
+          <div style={{ width: 44, height: 44, border: `3px solid ${T.divider}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
           <div style={{ fontSize: 15, color: T.textSec, fontWeight: 600 }}>분석 중...</div>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
@@ -259,7 +269,7 @@ export default function ExcelImportPage() {
     );
   }
 
-  // ── Done 화면 ────────────────────────────────────────────────
+  // ── Done ─────────────────────────────────────────────────────
   if (stage === 'done') {
     return (
       <Screen>
@@ -273,19 +283,20 @@ export default function ExcelImportPage() {
             {monthLabel(selectedMonth)} 내역이 가계부에 추가됐어요.
           </div>
           <div style={{ width: '100%', display: 'flex', gap: 8, marginTop: 8 }}>
-            <SecondaryButton onClick={() => { setStage('upload'); setFileBuffer(null); setAvailableMonths([]); setSelectedMonth(''); }} style={{ flex: 1 }}>
+            <SecondaryButton
+              onClick={() => { setStage('upload'); setFileBuffer(null); setAvailableMonths([]); setSelectedMonth(''); }}
+              style={{ flex: 1 }}
+            >
               다른 월 가져오기
             </SecondaryButton>
-            <PrimaryButton onClick={() => router.push('/')} style={{ flex: 1 }}>
-              홈으로
-            </PrimaryButton>
+            <PrimaryButton onClick={() => router.push('/')} style={{ flex: 1 }}>홈으로</PrimaryButton>
           </div>
         </div>
       </Screen>
     );
   }
 
-  // ── Review / Saving 화면 ──────────────────────────────────────
+  // ── Review / Saving ──────────────────────────────────────────
   if (!result) return null;
 
   const allRows = [...result.toInclude, ...result.needsReview];
@@ -305,31 +316,20 @@ export default function ExcelImportPage() {
 
   return (
     <Screen>
-      <AppHeader
-        title={`${monthLabel(selectedMonth)} 분석 결과`}
-        onBack={() => setStage('upload')}
-      />
+      <AppHeader title={`${monthLabel(selectedMonth)} 분석 결과`} onBack={() => setStage('upload')} />
 
-      {/* 요약 칩 */}
+      {/* 탭 */}
       <div style={{ padding: '12px 16px 4px', display: 'flex', gap: 6, borderBottom: `1px solid ${T.divider}` }}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             style={{
-              flex: 1,
-              padding: '10px 4px',
-              border: 0,
-              borderRadius: 12,
+              flex: 1, padding: '10px 4px', border: 0, borderRadius: 12,
               background: activeTab === tab.id ? (tab.color ? tab.color + '15' : T.bgMuted) : T.bgSoft,
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 2,
+              cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
               outline: activeTab === tab.id ? `2px solid ${tab.color || T.text}` : 'none',
-              outlineOffset: -2,
-              fontFamily: 'Pretendard, system-ui, sans-serif',
+              outlineOffset: -2, fontFamily: 'Pretendard, system-ui, sans-serif',
             }}
           >
             <span style={{ fontSize: 18, fontWeight: 800, color: tab.color || T.textSec, fontVariantNumeric: 'tabular-nums' }}>
@@ -344,12 +344,9 @@ export default function ExcelImportPage() {
 
       <ScreenBody padBottom={100}>
         {tabRows[activeTab].length === 0 ? (
-          <div style={{ padding: '48px 20px', textAlign: 'center', color: T.textTer, fontSize: 14 }}>
-            항목이 없어요
-          </div>
+          <div style={{ padding: '48px 20px', textAlign: 'center', color: T.textTer, fontSize: 14 }}>항목이 없어요</div>
         ) : (
           <div style={{ padding: '8px 0' }}>
-            {/* 확인필요 탭 안내 */}
             {activeTab === 'review' && result.needsReview.some((r) => r.status === 'duplicate_suspect') && (
               <div style={{ margin: '8px 16px 12px', padding: '12px 14px', background: T.dangerSoft, borderRadius: 12, fontSize: 12, color: T.danger, fontWeight: 600, lineHeight: 1.6 }}>
                 ⚠️ 중복 의심 항목은 기본적으로 미선택 상태입니다. 확인 후 필요하면 직접 선택하세요.
@@ -357,37 +354,33 @@ export default function ExcelImportPage() {
             )}
 
             {tabRows[activeTab].map((row) => {
-              const cat = DEFAULT_CATEGORIES.find((c) => c.id === row.category);
+              const effectiveCat = rowCategories[row.idx] ?? row.category;
+              const cat = DEFAULT_CATEGORIES.find((c) => c.id === effectiveCat);
               const isReviewable = activeTab !== 'excluded';
               const isChecked = selected.has(row.idx);
-              const statusInfo = STATUS_LABEL[row.status];
+              const statusInfo = STATUS_LABEL[row.status] ?? { label: row.status, color: T.textTer };
+              const isDutchPay = row.status === 'dutch_pay';
+              const isTransfer = row.status === 'transfer_nudge';
 
               return (
-                <button
+                <div
                   key={row.idx}
-                  onClick={() => isReviewable && toggleRow(row.idx)}
-                  disabled={!isReviewable}
                   style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '13px 16px',
-                    border: 0,
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '13px 16px', borderBottom: `1px solid ${T.divider}`,
                     background: isChecked ? T.accentSoft + '40' : 'transparent',
-                    cursor: isReviewable ? 'pointer' : 'default',
-                    textAlign: 'left',
-                    borderBottom: `1px solid ${T.divider}`,
                   }}
                 >
                   {/* 체크박스 */}
                   {isReviewable && (
-                    <div
+                    <button
+                      onClick={() => toggleRow(row.idx)}
                       style={{
                         width: 22, height: 22, borderRadius: 6, flexShrink: 0,
                         background: isChecked ? T.accent : T.bgMuted,
                         border: isChecked ? 'none' : `1.5px solid ${T.divider}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', padding: 0,
                       }}
                     >
                       {isChecked && (
@@ -395,52 +388,77 @@ export default function ExcelImportPage() {
                           <path d="M1.5 5l3.5 3.5 7-7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       )}
-                    </div>
+                    </button>
                   )}
 
-                  {/* 카테고리 아이콘 */}
-                  <CatIcon catId={row.category} size={36} icon={cat?.icon} color={cat?.color} />
+                  {/* 카테고리 아이콘 — 이체 행은 탭하면 카테고리 변경 */}
+                  <button
+                    onClick={() => { if (isReviewable) setCatSheetRow(row); }}
+                    disabled={!isReviewable}
+                    style={{ background: 'transparent', border: 0, padding: 0, cursor: isReviewable ? 'pointer' : 'default', flexShrink: 0, position: 'relative' }}
+                  >
+                    <CatIcon catId={effectiveCat} size={36} icon={cat?.icon} color={cat?.color} />
+                    {isReviewable && (
+                      <div style={{
+                        position: 'absolute', bottom: -2, right: -2,
+                        width: 14, height: 14, borderRadius: 7,
+                        background: T.bgSoft, border: `1px solid ${T.divider}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                          <path d="M5.5 1l1.5 1.5-4 4H1.5V5l4-4z" stroke={T.textTer} strokeWidth="1" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
 
                   {/* 텍스트 */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <button
+                    onClick={() => isReviewable && toggleRow(row.idx)}
+                    disabled={!isReviewable}
+                    style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, padding: 0, cursor: isReviewable ? 'pointer' : 'default', textAlign: 'left' }}
+                  >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                      <span style={{
-                        fontSize: 14, fontWeight: 600, color: T.text,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {row.merchant}
                       </span>
-                      <span style={{
-                        flexShrink: 0, fontSize: 10, fontWeight: 700,
-                        padding: '2px 6px', borderRadius: 999,
-                        background: statusInfo.color + '18', color: statusInfo.color,
-                      }}>
+                      <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: statusInfo.color + '18', color: statusInfo.color }}>
                         {statusInfo.label}
                       </span>
                     </div>
                     <div style={{ fontSize: 11, color: T.textTer, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       <span>{row.date}</span>
                       <span>·</span>
-                      <span>{cat?.name || row.rawBigCat}</span>
+                      <span style={{ color: cat?.color }}>{cat?.name || row.rawBigCat}</span>
                       {row.payMethod && <><span>·</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{row.payMethod}</span></>}
                     </div>
-                    {row.nudgeMessage && (
+                    {isDutchPay && row.dutchPay && (
+                      <div style={{ fontSize: 11, color: '#F97316', fontWeight: 600, marginTop: 3 }}>
+                        ↳ n빵 감지 · {row.dutchPay.peopleCount}명 · 원금 {formatWon(row.dutchPay.originalAmount)} → 내 몫 {formatWon(row.dutchPay.myShare)}
+                      </div>
+                    )}
+                    {row.nudgeMessage && !isDutchPay && (
                       <div style={{ fontSize: 11, color: '#F59E0B', fontWeight: 600, marginTop: 3 }}>
                         ↳ {row.nudgeMessage}
                       </div>
                     )}
                     {row.excludeReason && (
-                      <div style={{ fontSize: 11, color: T.textTer, marginTop: 3 }}>
-                        ↳ {row.excludeReason}
+                      <div style={{ fontSize: 11, color: T.textTer, marginTop: 3 }}>↳ {row.excludeReason}</div>
+                    )}
+                  </button>
+
+                  {/* 금액 */}
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums' }}>
+                      {formatWon(row.amount)}
+                    </div>
+                    {isDutchPay && row.dutchPay && (
+                      <div style={{ fontSize: 10, color: T.textTer, textDecoration: 'line-through', fontVariantNumeric: 'tabular-nums' }}>
+                        {formatWon(row.dutchPay.originalAmount)}
                       </div>
                     )}
                   </div>
-
-                  {/* 금액 */}
-                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                    {formatWon(row.amount)}
-                  </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -454,13 +472,103 @@ export default function ExcelImportPage() {
         background: 'linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0))',
         maxWidth: 512, margin: '0 auto', zIndex: 100,
       }}>
-        <PrimaryButton
-          onClick={handleSave}
-          disabled={selectedCount === 0 || stage === 'saving'}
-        >
+        <PrimaryButton onClick={handleSave} disabled={selectedCount === 0 || stage === 'saving'}>
           {stage === 'saving' ? '저장 중...' : `${selectedCount}건 저장하기`}
         </PrimaryButton>
       </div>
+
+      {/* 카테고리 변경 시트 */}
+      {catSheetRow && (
+        <CategoryChangeSheet
+          row={catSheetRow}
+          currentCategory={rowCategories[catSheetRow.idx] ?? catSheetRow.category}
+          onClose={() => setCatSheetRow(null)}
+          onApply={applyCategoryChange}
+        />
+      )}
     </Screen>
+  );
+}
+
+function CategoryChangeSheet({
+  row,
+  currentCategory,
+  onClose,
+  onApply,
+}: {
+  row: ParsedRow;
+  currentCategory: string;
+  onClose: () => void;
+  onApply: (row: ParsedRow, cat: string, scope: 'this' | 'all') => void;
+}) {
+  const [selectedCat, setSelectedCat] = useState(currentCategory);
+  const [scope, setScope] = useState<'this' | 'all'>('this');
+  const isTransfer = row.status === 'transfer_nudge';
+  const cats = DEFAULT_CATEGORIES.filter((c) => c.id !== 'other');
+
+  return (
+    <BottomSheet open onClose={onClose} title="카테고리 변경" height="80%">
+      <div style={{ padding: '0 20px 24px' }}>
+        {/* 카테고리 그리드 */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+          {cats.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCat(cat.id)}
+              style={{
+                border: selectedCat === cat.id ? `2px solid ${cat.color}` : `1px solid ${T.divider}`,
+                padding: '10px 4px', borderRadius: 12, cursor: 'pointer',
+                background: selectedCat === cat.id ? cat.color + '12' : 'transparent',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+              }}
+            >
+              <CatIcon catId={cat.id} size={28} icon={cat.icon} color={cat.color} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: selectedCat === cat.id ? cat.color : T.textSec }}>
+                {cat.name}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* 이체 행만: 이번만 / 앞으로 쭉 */}
+        {isTransfer && (
+          <div style={{ marginBottom: 16, borderTop: `1px solid ${T.divider}`, paddingTop: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, marginBottom: 10 }}>적용 범위</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {([
+                { value: 'this' as const, label: '이번만', sub: '이 항목에만 적용' },
+                { value: 'all' as const, label: '앞으로 쭉', sub: '타인 송금 기본 카테고리로 저장' },
+              ]).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setScope(opt.value)}
+                  style={{
+                    width: '100%', border: `2px solid ${scope === opt.value ? T.accent : T.divider}`,
+                    borderRadius: 12, padding: '12px 14px', background: scope === opt.value ? T.accentSoft : T.bg,
+                    cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12,
+                    fontFamily: 'Pretendard, system-ui, sans-serif',
+                  }}
+                >
+                  <div style={{
+                    width: 18, height: 18, borderRadius: 9, flexShrink: 0,
+                    border: `2px solid ${scope === opt.value ? T.accent : T.divider}`,
+                    background: scope === opt.value ? T.accent : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {scope === opt.value && <div style={{ width: 6, height: 6, borderRadius: 3, background: '#fff' }} />}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{opt.label}</div>
+                    <div style={{ fontSize: 11, color: T.textSec, marginTop: 2 }}>{opt.sub}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <PrimaryButton onClick={() => onApply(row, selectedCat, scope)}>적용</PrimaryButton>
+      </div>
+    </BottomSheet>
   );
 }

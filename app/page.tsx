@@ -84,6 +84,9 @@ export default function HomePage() {
     })
     .sort((a, b) => b.used - a.used);
 
+  // 카테고리 ID → 카테고리 객체 맵 (커스텀 카테고리 icon/color 조회용)
+  const catLookup = new Map(categories.map((c) => [c.id, c]));
+
   // 최근 지출 4개
   const recentExpenses = [...expenses]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -413,7 +416,7 @@ export default function HomePage() {
                         : 'none',
                   }}
                 >
-                  <CatIcon catId={e.category} size={36} />
+                  <CatIcon catId={e.category} size={36} icon={catLookup.get(e.category)?.icon} color={catLookup.get(e.category)?.color} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
@@ -503,7 +506,7 @@ function CategoryRow({
           marginBottom: 8,
         }}
       >
-        <CatIcon catId={cat.id} size={36} />
+        <CatIcon catId={cat.id} size={36} icon={cat.icon} color={cat.color} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{

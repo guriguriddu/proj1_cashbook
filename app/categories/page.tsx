@@ -240,6 +240,31 @@ export default function CategoriesPage() {
             {/* 아이콘 */}
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec, marginBottom: 8 }}>아이콘</div>
+              {/* 직접 입력 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: 12, border: `2px solid ${T.accent}`,
+                  background: T.accentSoft, display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', fontSize: 24, flexShrink: 0,
+                }}>
+                  {newIcon}
+                </div>
+                <input
+                  value={newIcon}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) setNewIcon([...v].slice(-2).join(''));
+                  }}
+                  placeholder="이모지 직접 입력"
+                  style={{
+                    flex: 1, padding: '12px 14px', fontSize: 20,
+                    border: `1px solid ${T.divider}`, borderRadius: 12,
+                    outline: 'none', background: T.bgMuted, boxSizing: 'border-box',
+                    fontFamily: 'inherit',
+                  }}
+                />
+              </div>
+              {/* 프리셋 */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {PRESET_EMOJIS.map((emoji) => (
                   <button

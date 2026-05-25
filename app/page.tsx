@@ -305,45 +305,34 @@ export default function HomePage() {
         <div style={{ padding: '8px 20px 16px' }}>
           <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 12,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 17,
-                fontWeight: 700,
-                letterSpacing: '-0.02em',
-              }}
-            >
-              카테고리 별 사용량
-            </div>
-            <button
-              onClick={() => router.push('/budget')}
-              style={{
-                border: 0,
-                background: 'transparent',
-                cursor: 'pointer',
-                color: T.textTer,
-                fontSize: 13,
-                fontWeight: 500,
-                padding: 0,
-              }}
-            >
-              예산 설정 →
-            </button>
-          </div>
-
-          <div
-            style={{
               background: T.bg,
               border: `1px solid ${T.divider}`,
               borderRadius: 16,
               overflow: 'hidden',
             }}
           >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 16px 12px',
+                borderBottom: `1px solid ${T.divider}`,
+              }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>
+                카테고리 별 사용량
+              </div>
+              <button
+                onClick={() => router.push('/budget')}
+                style={{
+                  border: 0, background: 'transparent', cursor: 'pointer',
+                  color: T.textTer, fontSize: 13, fontWeight: 500, padding: 0,
+                }}
+              >
+                예산 설정 →
+              </button>
+            </div>
             {categoryRows.map((r, i) => (
               <div
                 key={r.cat.id}
@@ -362,44 +351,34 @@ export default function HomePage() {
         <div style={{ padding: '8px 20px 16px' }}>
           <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 12,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 17,
-                fontWeight: 700,
-                letterSpacing: '-0.02em',
-              }}
-            >
-              최근 소비 내역
-            </div>
-            <button
-              onClick={() => router.push('/expenses')}
-              style={{
-                border: 0,
-                background: 'transparent',
-                cursor: 'pointer',
-                color: T.textTer,
-                fontSize: 13,
-                fontWeight: 500,
-                padding: 0,
-              }}
-            >
-              전체 보기 →
-            </button>
-          </div>
-          <div
-            style={{
               background: T.bg,
               border: `1px solid ${T.divider}`,
               borderRadius: 16,
               overflow: 'hidden',
             }}
           >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 16px 12px',
+                borderBottom: `1px solid ${T.divider}`,
+              }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>
+                최근 소비 내역
+              </div>
+              <button
+                onClick={() => router.push('/expenses')}
+                style={{
+                  border: 0, background: 'transparent', cursor: 'pointer',
+                  color: T.textTer, fontSize: 13, fontWeight: 500, padding: 0,
+                }}
+              >
+                전체 보기 →
+              </button>
+            </div>
             {recentExpenses.length === 0 ? (
               <div
                 style={{

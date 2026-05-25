@@ -106,6 +106,7 @@ function ExpensesContent() {
   const [filterCat, setFilterCat] = useState(initialCat);
   const [sort, setSort] = useState<'date' | 'amount'>('date');
   const [monthSheetOpen, setMonthSheetOpen] = useState(false);
+  const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   // For non-monthly periods: fetch by date range
@@ -220,23 +221,21 @@ function ExpensesContent() {
         title="내역"
         onBack={() => router.push('/')}
         rightSlot={
-          period === 'month' ? (
-            <button
-              onClick={() => setSort(sort === 'date' ? 'amount' : 'date')}
-              style={{
-                width: 'auto', padding: '0 12px', height: 36, background: T.bgMuted,
-                borderRadius: 18, fontSize: 12, fontWeight: 600, color: T.textSec,
-                whiteSpace: 'nowrap', flexShrink: 0, border: 0, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 4,
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <path d="M3 4l3-3 3 3M3 8l3 3 3-3" stroke={T.textSec} strokeWidth="1.5"
-                  strokeLinecap="round" strokeLinejoin="round" fill="none" />
-              </svg>
-              {sort === 'date' ? '날짜순' : '금액순'}
-            </button>
-          ) : null
+          <button
+            onClick={() => setSort(sort === 'date' ? 'amount' : 'date')}
+            style={{
+              width: 'auto', padding: '0 12px', height: 36, background: T.bgMuted,
+              borderRadius: 18, fontSize: 12, fontWeight: 600, color: T.textSec,
+              whiteSpace: 'nowrap', flexShrink: 0, border: 0, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path d="M3 4l3-3 3 3M3 8l3 3 3-3" stroke={T.textSec} strokeWidth="1.5"
+                strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </svg>
+            {sort === 'date' ? '날짜순' : '금액순'}
+          </button>
         }
       />
 
@@ -375,31 +374,45 @@ function ExpensesContent() {
       ) : (
         /* ── 분기/반기/연간 리스트 뷰 ── */
         <>
-          {/* Period stepper */}
           <div style={{ padding: '8px 20px 12px', background: T.bg }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <StepBtn onClick={() => setOffset(offset - 1)} dir="prev" />
-              <div style={{ textAlign: 'center', flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: T.textSec, letterSpacing: '-0.01em' }}>
-                  {info.label}
-                </div>
-                {offset !== 0 && (
-                  <button
-                    onClick={() => setOffset(0)}
-                    style={{ border: 0, background: 'transparent', cursor: 'pointer', color: T.accent, fontSize: 11, fontWeight: 600, padding: '2px 0' }}
-                  >
-                    현재로 돌아가기
-                  </button>
-                )}
-              </div>
-              <StepBtn onClick={() => setOffset(offset + 1)} dir="next" />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <MoneyText value={rangeTotal} size={28} weight={800} />
+              <button
+                onClick={() => setPeriodSheetOpen(true)}
+                style={{
+                  border: 0, background: 'transparent', padding: 0, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  fontSize: 14, fontWeight: 600, color: T.textSec, letterSpacing: '-0.01em',
+                }}
+              >
+                {info.label}
+                <svg width="14" height="14" viewBox="0 0 14 14">
+                  <path d="M4 5l3 3 3-3" stroke={T.textSec} strokeWidth="1.5" fill="none"
+                    strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
               <div style={{ fontSize: 12, color: T.textTer, fontVariantNumeric: 'tabular-nums' }}>
                 {rangeFiltered.length}건
               </div>
             </div>
+            <MoneyText value={rangeTotal} size={28} weight={800} />
+            {filterCat === 'all' && (() => {
+              const monthCount = period === 'quarter' ? 3 : period === 'half' ? 6 : 12;
+              const monthlyBudget = Object.values(budget.categoryBudgets).reduce((a, v) => a + v, 0);
+              const totalBudget = monthlyBudget * monthCount;
+              const totalPct = totalBudget > 0 ? (rangeTotal / totalBudget) * 100 : 0;
+              const periodLabel = period === 'quarter' ? '분기' : period === 'half' ? '반기' : '연간';
+              return (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, fontWeight: 500, color: T.textSec, marginBottom: 6 }}>
+                    <span style={{ fontWeight: 600 }}>{periodLabel} 예산 사용률</span>
+                    <span style={{ color: totalPct > 100 ? T.danger : T.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                      {totalPct.toFixed(0)}% / {totalBudget.toLocaleString()}원
+                    </span>
+                  </div>
+                  <ProgressBar value={totalPct} height={6} fillColor={totalPct > 100 ? T.danger : T.accent} />
+                </div>
+              );
+            })()}
           </div>
 
           {/* Category chips */}
@@ -464,7 +477,6 @@ function ExpensesContent() {
         <MonthPickerSheet
           current={monthKey}
           onPick={(m) => {
-            // offset을 새 달로 맞춤
             const now = new Date();
             const [y, mo] = m.split('-').map(Number);
             const diff = y * 12 + (mo - 1) - (now.getFullYear() * 12 + now.getMonth());
@@ -472,6 +484,15 @@ function ExpensesContent() {
             setMonthSheetOpen(false);
           }}
           onClose={() => setMonthSheetOpen(false)}
+        />
+      )}
+
+      {periodSheetOpen && period !== 'month' && (
+        <PeriodPickerSheet
+          period={period}
+          currentOffset={offset}
+          onPick={(off) => { setOffset(off); setPeriodSheetOpen(false); }}
+          onClose={() => setPeriodSheetOpen(false)}
         />
       )}
 
@@ -487,20 +508,54 @@ function ExpensesContent() {
   );
 }
 
-function StepBtn({ onClick, dir }: { onClick: () => void; dir: 'prev' | 'next' }) {
+function PeriodPickerSheet({
+  period, currentOffset, onPick, onClose,
+}: {
+  period: 'quarter' | 'half' | 'year';
+  currentOffset: number;
+  onPick: (offset: number) => void;
+  onClose: () => void;
+}) {
+  const count = period === 'quarter' ? 8 : period === 'half' ? 4 : 3;
+  const options = Array.from({ length: count }, (_, i) => -i); // [0, -1, -2, ...]
+
   return (
-    <button
-      onClick={onClick}
-      style={{
-        width: 36, height: 36, borderRadius: 18, border: 0, cursor: 'pointer',
-        background: T.bgSoft, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
-    >
-      <svg width="10" height="14" viewBox="0 0 10 14" fill="none"
-        style={dir === 'next' ? undefined : { transform: 'rotate(180deg)' }}>
-        <path d="M2 1l6 6-6 6" stroke={T.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </button>
+    <BottomSheet open onClose={onClose} title="기간 선택" height="70%">
+      <div style={{ padding: '0 8px 16px' }}>
+        {options.map((off) => {
+          const pInfo = periodInfo(period, off);
+          const isCurrent = off === currentOffset;
+          return (
+            <button
+              key={off}
+              onClick={() => onPick(off)}
+              style={{
+                width: '100%', border: 0, background: isCurrent ? T.accentSoft : 'transparent',
+                display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px',
+                margin: '2px 0', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+                fontFamily: 'Pretendard, system-ui, sans-serif',
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em', color: isCurrent ? T.accent : T.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {pInfo.label}
+                  {off === 0 && (
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: T.bgMuted, color: T.textSec }}>
+                      현재
+                    </span>
+                  )}
+                </div>
+              </div>
+              {isCurrent && (
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" style={{ flexShrink: 0 }}>
+                  <path d="M4 9l3 3 7-7" stroke={T.accent} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </BottomSheet>
   );
 }
 

@@ -17,7 +17,7 @@ import {
   getCurrentMonth,
 } from '@/lib/supabase-storage';
 import * as storage from '@/lib/supabase-storage';
-import { useBudget, useGoalSettings, useCategories } from '@/hooks/useSupabaseData';
+import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
 import type { Budget } from '@/types';
 
@@ -85,7 +85,11 @@ export default function BudgetPage() {
   const router = useRouter();
   const { budget, loading: budgetLoading, refresh: refreshBudget } = useBudget();
   const { settings } = useGoalSettings();
-  const { categories: allCategories } = useCategories();
+  const [allCategories, setAllCategories] = useState<import('@/types').Category[]>([]);
+
+  useEffect(() => {
+    storage.getCategories().then(setAllCategories).catch(() => {});
+  }, []);
   const monthlyIncome = settings.monthlyIncome;
   const [period, setPeriod] = useState<PeriodType>('month');
   const [offset, setOffset] = useState(0);
@@ -153,7 +157,9 @@ export default function BudgetPage() {
     { id: 'month' as const, label: '월별' },
   ];
 
-  const categories = (allCategories.length > 0 ? allCategories : DEFAULT_CATEGORIES).filter((c) => c.id !== 'other');
+  const categories = (allCategories.length > 0 ? allCategories : DEFAULT_CATEGORIES).filter(
+    (c) => c.id !== 'other'
+  );
 
   return (
     <Screen>

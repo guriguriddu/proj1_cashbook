@@ -144,32 +144,20 @@ export default function HomePage() {
             />
           </svg>
         </button>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            aria-label="알림"
-            style={{
-              width: 40,
-              height: 40,
-              border: 0,
-              background: 'transparent',
-              borderRadius: 20,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-              <path
-                d="M11 3a5 5 0 00-5 5v3l-1.5 2.5h13L16 11V8a5 5 0 00-5-5zM9 17a2 2 0 004 0"
-                stroke={T.text}
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        </div>
+        <button
+          onClick={() => router.push('/mypage')}
+          aria-label="프로필"
+          style={{
+            width: 40, height: 40, border: 0, background: 'transparent',
+            borderRadius: 20, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <circle cx="11" cy="7.5" r="3.5" stroke={T.text} strokeWidth="1.8" />
+            <path d="M3.5 18.5c0-3 3.4-5.5 7.5-5.5s7.5 2.5 7.5 5.5" stroke={T.text} strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+        </button>
       </div>
 
       <ScreenBody>

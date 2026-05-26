@@ -8,15 +8,14 @@ interface NavItem {
   id: string;
   href: string;
   label: string;
-  icon: 'home' | 'list' | 'plus' | 'target' | 'user';
+  icon: 'home' | 'plus' | 'flag' | 'chart';
 }
 
 const navItems: NavItem[] = [
   { id: 'home', href: '/', label: '홈', icon: 'home' },
-  { id: 'history', href: '/expenses', label: '내역', icon: 'list' },
   { id: 'add', href: '/add', label: '추가', icon: 'plus' },
-  { id: 'budget', href: '/budget', label: '예산 설정', icon: 'target' },
-  { id: 'mypage', href: '/mypage', label: 'MY', icon: 'user' },
+  { id: 'goals', href: '/goals', label: '목표', icon: 'flag' },
+  { id: 'invest', href: '/invest', label: '투자', icon: 'chart' },
 ];
 
 export default function BottomNav() {
@@ -104,13 +103,6 @@ function TabIcon({ icon, active }: { icon: string; active: boolean }) {
       </svg>
     );
   }
-  if (icon === 'list') {
-    return (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-        <path d="M4 7h16M4 12h16M4 17h10" stroke={c} strokeWidth={w} strokeLinecap="round" />
-      </svg>
-    );
-  }
   if (icon === 'plus') {
     return (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -119,24 +111,21 @@ function TabIcon({ icon, active }: { icon: string; active: boolean }) {
       </svg>
     );
   }
-  if (icon === 'target') {
+  if (icon === 'flag') {
     return (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-        <rect x="4" y="4" width="16" height="16" rx="2" stroke={c} strokeWidth={w} />
-        <path d="M8 12h8M12 8v8" stroke={c} strokeWidth={w} strokeLinecap="round" />
+        <path d="M5 3v18" stroke={c} strokeWidth={w} strokeLinecap="round" />
+        <path d="M5 4h11l-2.5 4.5L16 13H5" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
   }
-  if (icon === 'user') {
+  if (icon === 'chart') {
     return (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="8" r="4" stroke={c} strokeWidth={w} />
-        <path
-          d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6"
-          stroke={c}
-          strokeWidth={w}
-          strokeLinecap="round"
-        />
+        <path d="M4 20L9 14l4 3 7-9" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="9" cy="14" r="1.2" fill={c} />
+        <circle cx="13" cy="17" r="1.2" fill={c} />
+        <circle cx="20" cy="8" r="1.2" fill={c} />
       </svg>
     );
   }

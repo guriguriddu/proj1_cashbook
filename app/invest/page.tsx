@@ -122,12 +122,60 @@ function calcDividendTax(params: {
   };
 }
 
-// 해외 주식 양도소득세 (연간 250만 공제 후 22%)
-function calcCapitalGainTax(gain: number): { tax: number; net: number; effectiveRate: number } {
-  const DEDUCTION = 2_500_000;
-  const taxable = Math.max(0, gain - DEDUCTION);
-  const tax = Math.floor(taxable * 0.22); // 20% + 지방소득세 2%
-  return { tax, net: gain - tax, effectiveRate: gain > 0 ? tax / gain : 0 };
+// ─── 양도소득세 계산 ──────────────────────────────────────────────────────────
+
+interface CapGainResult {
+  gain: number;
+  transactionTax: number;      // 증권거래세 (국내 소액주주)
+  isTaxExempt: boolean;        // 국내 소액주주 비과세
+  deduction: number;
+  taxable: number;
+  tax: number;                 // 양도소득세 + 지방소득세
+  net: number;
+  effectiveRate: number;
+}
+
+function calcCapitalGainTax(params: {
+  gain: number;
+  salePrice: number;           // 매도금액 (증권거래세 계산용)
+  isDomestic: boolean;
+  isMajorShareholder: boolean; // 국내 대주주 여부
+  market: 'kospi' | 'kosdaq' | 'overseas';
+}): CapGainResult {
+  const { gain, salePrice, isDomestic, isMajorShareholder, market } = params;
+
+  // 증권거래세 (국내만, 매도금액 기준 세전)
+  const txTaxRate = market === 'kospi' ? 0.0015 : market === 'kosdaq' ? 0.002 : 0;
+  const transactionTax = Math.floor(salePrice * txTaxRate);
+
+  if (isDomestic && !isMajorShareholder) {
+    // 소액주주: 매매차익 비과세
+    return { gain, transactionTax, isTaxExempt: true, deduction: 0, taxable: 0, tax: 0, net: gain - transactionTax, effectiveRate: 0 };
+  }
+
+  let tax = 0;
+  let deduction = 0;
+
+  if (isDomestic && isMajorShareholder) {
+    // 대주주: 과세표준 3억 이하 22%, 초과분 27.5%
+    const BRACKET = 300_000_000;
+    if (gain <= BRACKET) {
+      tax = Math.floor(gain * 0.22);
+    } else {
+      tax = Math.floor(BRACKET * 0.22 + (gain - BRACKET) * 0.275);
+    }
+  } else {
+    // 해외 주식·ETF: 250만 공제 후 22%
+    deduction = Math.min(2_500_000, gain);
+    const taxable = Math.max(0, gain - 2_500_000);
+    tax = Math.floor(taxable * 0.22); // 20% 양도세 + 2% 지방소득세
+  }
+
+  const taxable = Math.max(0, gain - deduction);
+  const net = gain - tax - transactionTax;
+  const totalOut = tax + transactionTax;
+  const effectiveRate = gain > 0 ? totalOut / gain : 0;
+  return { gain, transactionTax, isTaxExempt: false, deduction, taxable, tax, net, effectiveRate };
 }
 
 // ─── 포맷 헬퍼 ──────────────────────────────────────────────────────────────
@@ -188,7 +236,13 @@ export default function InvestPage() {
   });
 
   // 양도소득세 계산기
-  const [capitalGain, setCapitalGain] = useState(10_000_000);
+  const [capInputs, setCapInputs] = useState({
+    gain: 10_000_000,
+    salePrice: 50_000_000,
+    isDomestic: false,
+    isMajorShareholder: false,
+    market: 'overseas' as 'kospi' | 'kosdaq' | 'overseas',
+  });
 
   // 투자 시뮬레이션 입력값
   const [simInputs, setSimInputs] = useState({
@@ -208,7 +262,7 @@ export default function InvestPage() {
   const divResult = calcDividendTax({ ...divInputs, laborIncome });
 
   // 양도소득세 계산
-  const capResult = calcCapitalGainTax(capitalGain);
+  const capResult = calcCapitalGainTax(capInputs);
 
   // 투자 시뮬레이션 계산
   const simResult = (() => {
@@ -242,7 +296,13 @@ export default function InvestPage() {
     }
 
     totalCapitalGainGross = Math.max(0, balance - totalInvested);
-    const capTax = calcCapitalGainTax(totalCapitalGainGross);
+    const capTax = calcCapitalGainTax({
+      gain: totalCapitalGainGross,
+      salePrice: balance,
+      isDomestic: simInputs.isDomestic,
+      isMajorShareholder: false,
+      market: simInputs.isDomestic ? 'kospi' : 'overseas',
+    });
 
     const finalBalance = balance - capTax.tax;
     const totalReturn = finalBalance - totalInvested;
@@ -283,9 +343,14 @@ export default function InvestPage() {
       presets: [{ value: 0, label: '없음' }, { value: 1_000_000, label: '100만' }, { value: 5_000_000, label: '500만' }],
     },
     capitalGain: {
-      label: '양도차익 (매도가 - 매수가)', value: capitalGain, unit: '원', step: 1_000_000,
-      set: (v) => setCapitalGain(v),
+      label: '양도차익 (세전·매도가−매수가−거래비용)', value: capInputs.gain, unit: '원', step: 1_000_000,
+      set: (v) => setCapInputs(p => ({ ...p, gain: v })),
       presets: [{ value: 2_500_000, label: '250만' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }, { value: 50_000_000, label: '5,000만' }],
+    },
+    salePrice: {
+      label: '매도금액 (증권거래세 계산용)', value: capInputs.salePrice, unit: '원', step: 1_000_000,
+      set: (v) => setCapInputs(p => ({ ...p, salePrice: v })),
+      presets: [{ value: 10_000_000, label: '1,000만' }, { value: 30_000_000, label: '3,000만' }, { value: 50_000_000, label: '5,000만' }, { value: 100_000_000, label: '1억' }],
     },
     simPrincipal: {
       label: '초기 투자금', value: simInputs.principal, unit: '원', step: 1_000_000,
@@ -433,22 +498,124 @@ export default function InvestPage() {
         {/* ── 양도소득세 ── */}
         {tab === 'capital' && (
           <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <SectionCard title="입력">
-              <InputRow label="양도차익 (세전)" value={formatWon(capitalGain)} onTap={() => setEditingField('capitalGain')} noBorder />
+            {/* 세전 기준 안내 */}
+            <InfoBanner tone="neutral">
+              💡 세금 계산 기준은 모두 <b>세전(gross)</b>이에요.<br />
+              양도세 = 세전 양도차익(매도가 − 매수가 − 거래비용)에 부과<br />
+              배당세 = 세전 배당금에서 원천징수 후 지급
+            </InfoBanner>
+
+            {/* 국내/해외 선택 */}
+            <SectionCard title="주식 종류">
+              <ToggleRow
+                label="국내 주식 (코스피·코스닥·ETF)"
+                value={capInputs.isDomestic}
+                onChange={v => setCapInputs(p => ({ ...p, isDomestic: v, market: v ? 'kospi' : 'overseas' }))}
+              />
+              {capInputs.isDomestic && (
+                <>
+                  {/* 시장 선택 */}
+                  <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.divider}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec, marginBottom: 8 }}>시장 선택</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {(['kospi', 'kosdaq'] as const).map(m => (
+                        <button
+                          key={m}
+                          onClick={() => setCapInputs(p => ({ ...p, market: m }))}
+                          style={{
+                            flex: 1, padding: '8px 0', borderRadius: 10, border: 0, cursor: 'pointer',
+                            background: capInputs.market === m ? T.text : T.bgMuted,
+                            color: capInputs.market === m ? '#fff' : T.textSec,
+                            fontSize: 13, fontWeight: 600,
+                          }}
+                        >
+                          {m === 'kospi' ? '코스피 (거래세 0.15%)' : '코스닥 (거래세 0.20%)'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <ToggleRow
+                    label="대주주 (종목 10억↑ 또는 지분 1%↑)"
+                    value={capInputs.isMajorShareholder}
+                    onChange={v => setCapInputs(p => ({ ...p, isMajorShareholder: v }))}
+                    noBorder
+                  />
+                </>
+              )}
             </SectionCard>
 
-            <SectionCard title="세금 내역">
-              <ResultRow label="기본 공제" value={`−${formatWon(Math.min(2_500_000, capitalGain))}`} color={T.accent} />
-              <ResultRow label="과세표준" value={formatWon(Math.max(0, capitalGain - 2_500_000))} />
-              <ResultRow label="양도소득세 (20%) + 지방세 (2%)" value={formatWon(capResult.tax)} color={T.danger} />
-              <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
-              <ResultRow label="실수령 차익" value={formatWon(capResult.net)} color={T.accent} big />
-              <ResultRow label="실효세율" value={fmtPct(capResult.effectiveRate)} color={T.textSec} />
+            {/* 입력 */}
+            <SectionCard title={`입력 (세전 기준)`}>
+              <InputRow
+                label="양도차익 (매도가 − 매수가 − 거래비용)"
+                value={formatWon(capInputs.gain)}
+                onTap={() => setEditingField('capitalGain')}
+              />
+              {capInputs.isDomestic && (
+                <InputRow
+                  label="매도금액 (증권거래세 계산용)"
+                  value={formatWon(capInputs.salePrice)}
+                  onTap={() => setEditingField('salePrice')}
+                  noBorder
+                />
+              )}
+              {!capInputs.isDomestic && (
+                <InputRow
+                  label="매도금액 (증권거래세 없음)"
+                  value={formatWon(capInputs.salePrice)}
+                  onTap={() => setEditingField('salePrice')}
+                  noBorder
+                />
+              )}
             </SectionCard>
+
+            {/* 결과 */}
+            {capResult.isTaxExempt ? (
+              <SectionCard title="세금 내역">
+                <div style={{ padding: '16px', background: T.accentSoft, margin: '0' }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: T.accent, marginBottom: 4 }}>매매차익 비과세 ✓</div>
+                  <div style={{ fontSize: 13, color: T.accent, fontWeight: 500 }}>소액주주는 국내 주식 양도세가 없어요.</div>
+                </div>
+                {capResult.transactionTax > 0 && (
+                  <>
+                    <ResultRow
+                      label={`증권거래세 (${capInputs.market === 'kospi' ? '0.15%' : '0.20%'}, 매도금액 기준·세전)`}
+                      value={formatWon(capResult.transactionTax)}
+                      color={T.danger}
+                    />
+                    <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                    <ResultRow label="실수령 차익" value={formatWon(capResult.net)} color={T.accent} big />
+                  </>
+                )}
+              </SectionCard>
+            ) : (
+              <SectionCard title="세금 내역">
+                {!capInputs.isDomestic && (
+                  <ResultRow label="기본 공제 (연간 250만·세전 차익 기준)" value={`−${formatWon(capResult.deduction)}`} color={T.accent} />
+                )}
+                <ResultRow label="과세표준" value={formatWon(capResult.taxable)} />
+                {capInputs.isDomestic && capInputs.isMajorShareholder ? (
+                  <ResultRow label="양도소득세 (3억↓ 22% / 초과 27.5%) + 지방세" value={formatWon(capResult.tax)} color={T.danger} />
+                ) : (
+                  <ResultRow label="양도소득세 20% + 지방소득세 2%" value={formatWon(capResult.tax)} color={T.danger} />
+                )}
+                {capResult.transactionTax > 0 && (
+                  <ResultRow
+                    label={`증권거래세 (${capInputs.market === 'kospi' ? '0.15%' : '0.20%'})`}
+                    value={formatWon(capResult.transactionTax)}
+                    color={T.danger}
+                  />
+                )}
+                <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                <ResultRow label="실수령 차익" value={formatWon(capResult.net)} color={T.accent} big />
+                <ResultRow label="실효세율 (차익 대비)" value={fmtPct(capResult.effectiveRate)} color={T.textSec} />
+              </SectionCard>
+            )}
 
             <InfoBanner tone="neutral">
-              해외 주식·ETF 양도차익에 적용돼요. 국내 주식은 대주주(10억 이상)가 아니면 양도세 비과세예요.
-              연간 250만원 공제는 1인 기준으로 손익통산 후 적용됩니다.
+              해외 주식 250만 공제는 연간 손익통산 후 적용돼요 (손실 종목과 합산 가능).<br />
+              신고: 다음 해 5월 종합소득세 신고 시 자진 신고해야 해요.<br />
+              국내 ETF 매매차익은 소액주주 기준 비과세이나, 채권형·레버리지 ETF는 다를 수 있어요.
             </InfoBanner>
           </div>
         )}

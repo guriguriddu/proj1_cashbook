@@ -214,7 +214,7 @@ export default function InvestPage() {
     });
   }, []);
 
-  // 종합소득세 기준 근로소득 = 세전 연봉 + 성과금
+  // 종합소득세 기준 근로소득 (세전 연간 총소득)
   const laborIncome = investSettings.annualSalary + investSettings.bonusIncome;
 
   const [tab, setTab] = useState<Tab>('dividend');
@@ -431,11 +431,6 @@ export default function InvestPage() {
                 {laborIncome > 0 ? (
                   <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums' }}>
                     {formatWon(laborIncome)}
-                    {investSettings.bonusIncome > 0 && (
-                      <span style={{ fontSize: 12, color: T.textSec, fontWeight: 500, marginLeft: 6 }}>
-                        (연봉 {formatWon(investSettings.annualSalary)} + 성과금 {formatWon(investSettings.bonusIncome)})
-                      </span>
-                    )}
                   </div>
                 ) : (
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#92400E' }}>
@@ -670,8 +665,7 @@ export default function InvestPage() {
       {/* 연봉 수정 시트 */}
       {salarySheetOpen && (
         <SalarySheet
-          annualSalary={investSettings.annualSalary}
-          bonusIncome={investSettings.bonusIncome}
+          annualSalary={investSettings.annualSalary + investSettings.bonusIncome}
           onClose={() => setSalarySheetOpen(false)}
           onSave={(annualSalary, bonusIncome, useCustom) => {
             const next = { annualSalary, bonusIncome, useCustomSalary: useCustom };
@@ -861,74 +855,49 @@ function NumberEditSheet({ title, value, onClose, onSave, unit = '원', min = 0,
   );
 }
 
-function SalarySheet({ annualSalary, bonusIncome, onClose, onSave }: {
-  annualSalary: number; bonusIncome: number;
+function SalarySheet({ annualSalary, onClose, onSave }: {
+  annualSalary: number;
   onClose: () => void;
   onSave: (annualSalary: number, bonusIncome: number, useCustom: boolean) => void;
 }) {
-  const [salary, setSalary] = useState(annualSalary);
-  const [bonus, setBonus] = useState(bonusIncome);
+  const [total, setTotal] = useState(annualSalary);
 
   const fmtInput = (n: number) => n === 0 ? '' : Math.floor(n).toLocaleString('ko-KR');
   const parseInput = (s: string) => Math.max(0, Number(s.replace(/[^\d]/g, '')) || 0);
 
   return (
-    <BottomSheet open onClose={onClose} title="세전 근로소득 입력" height="60%">
+    <BottomSheet open onClose={onClose} title="세전 연간 소득" height="50%">
       <div style={{ padding: '0 20px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <InfoBanner tone="neutral">
-          금융소득 종합과세 계산에 사용돼요. <b>세전(gross)</b> 금액으로 입력해주세요.
+          원천징수영수증의 <b>총급여</b> 금액을 입력해주세요. 성과금 포함 연간 세전 총소득이에요.
         </InfoBanner>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: T.textTer }}>세전 연봉 (성과금 제외)</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.bgMuted, borderRadius: 12, padding: '12px 14px' }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: T.textSec }}>₩</span>
+          <div style={{ fontSize: 12, fontWeight: 600, color: T.textTer }}>세전 연간 총소득 (성과금 포함)</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.bgMuted, borderRadius: 12, padding: '14px 16px' }}>
+            <span style={{ fontSize: 16, fontWeight: 600, color: T.textSec }}>₩</span>
             <input
               type="text" inputMode="numeric"
-              value={fmtInput(salary)}
+              value={fmtInput(total)}
               placeholder="예: 52,000,000"
-              onChange={e => setSalary(parseInput(e.target.value))}
+              onChange={e => setTotal(parseInput(e.target.value))}
               style={{
                 flex: 1, border: 0, background: 'transparent', outline: 'none',
-                fontSize: 16, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums',
+                fontSize: 18, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums',
                 fontFamily: 'Pretendard, system-ui, sans-serif',
               }}
             />
           </div>
-          {salary >= 10_000 && (
-            <div style={{ fontSize: 11, color: T.textTer, paddingLeft: 4 }}>
-              {salary >= 100_000_000
-                ? `${Math.floor(salary / 100_000_000)}억 ${Math.floor((salary % 100_000_000) / 10_000)}만원`
-                : `${Math.floor(salary / 10_000).toLocaleString()}만원`}
+          {total >= 10_000 && (
+            <div style={{ fontSize: 12, color: T.textTer, paddingLeft: 4 }}>
+              {total >= 100_000_000
+                ? `${Math.floor(total / 100_000_000)}억 ${Math.floor((total % 100_000_000) / 10_000).toLocaleString()}만원`
+                : `${Math.floor(total / 10_000).toLocaleString()}만원`}
             </div>
           )}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: T.textTer }}>세전 성과금·기타 연간 추가소득 (없으면 0)</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.bgMuted, borderRadius: 12, padding: '12px 14px' }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: T.textSec }}>₩</span>
-            <input
-              type="text" inputMode="numeric"
-              value={fmtInput(bonus)}
-              placeholder="0"
-              onChange={e => setBonus(parseInput(e.target.value))}
-              style={{
-                flex: 1, border: 0, background: 'transparent', outline: 'none',
-                fontSize: 16, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums',
-                fontFamily: 'Pretendard, system-ui, sans-serif',
-              }}
-            />
-          </div>
-        </div>
-
-        {(salary + bonus) > 0 && (
-          <div style={{ background: T.accentSoft, borderRadius: 12, padding: '12px 14px', fontSize: 13, fontWeight: 600, color: T.accent }}>
-            총 세전 근로소득: {formatWon(salary + bonus)}
-          </div>
-        )}
-
-        <PrimaryButton onClick={() => onSave(salary, bonus, true)}>적용</PrimaryButton>
+        <PrimaryButton onClick={() => onSave(total, 0, true)}>적용</PrimaryButton>
       </div>
     </BottomSheet>
   );

@@ -178,17 +178,6 @@ export default function BudgetPage() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button
-                onClick={() => router.push('/categories')}
-                style={{
-                  border: 0, cursor: 'pointer', background: 'transparent',
-                  color: T.textTer, fontSize: 13, fontWeight: 600,
-                  letterSpacing: '-0.01em', padding: '6px 0',
-                  fontFamily: 'Pretendard, system-ui, sans-serif',
-                }}
-              >
-                카테고리 수정
-              </button>
-              <button
                 onClick={() => setEditMode(!editMode)}
                 style={{
                   border: 0,

@@ -80,9 +80,9 @@ export default function AddPage() {
             badge={<Badge tone="accent" size="md">추천</Badge>}
           />
 
-          {/* 엑셀 가져오기 */}
+          {/* 파일 가져오기 */}
           <ChoiceCard
-            onClick={() => router.push('/add/excel')}
+            onClick={() => router.push('/add/import')}
             iconBg="#E8F5E9"
             iconColor="#16A34A"
             icon={
@@ -93,8 +93,8 @@ export default function AddPage() {
                 <path d="M8 14l3 3 3-3M11 17v-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             }
-            title="엑셀 가져오기"
-            desc="뱅크샐러드 내보내기 파일 (.xlsx)"
+            title="파일 가져오기"
+            desc="엑셀·PDF → AI가 자동으로 분석 (.xlsx / .pdf)"
           />
 
           {/* 직접 입력 */}

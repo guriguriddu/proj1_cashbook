@@ -312,13 +312,13 @@ export default function HomePage() {
                 카테고리 별 사용량
               </div>
               <button
-                onClick={() => router.push('/budget')}
+                onClick={() => router.push('/expenses')}
                 style={{
                   border: 0, background: 'transparent', cursor: 'pointer',
                   color: T.textTer, fontSize: 13, fontWeight: 500, padding: 0,
                 }}
               >
-                예산 설정 →
+                더보기 및 설정 →
               </button>
             </div>
             {categoryRows.map((r, i) => (

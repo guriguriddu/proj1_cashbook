@@ -8,13 +8,14 @@ interface NavItem {
   id: string;
   href: string;
   label: string;
-  icon: 'home' | 'plus' | 'flag' | 'chart';
+  icon: 'home' | 'plus' | 'flag' | 'wallet' | 'chart';
 }
 
 const navItems: NavItem[] = [
   { id: 'home', href: '/', label: '홈', icon: 'home' },
   { id: 'add', href: '/add', label: '추가', icon: 'plus' },
   { id: 'goals', href: '/goals', label: '목표', icon: 'flag' },
+  { id: 'budget', href: '/budget', label: '예산', icon: 'wallet' },
   { id: 'invest', href: '/invest', label: '투자', icon: 'chart' },
 ];
 
@@ -116,6 +117,15 @@ function TabIcon({ icon, active }: { icon: string; active: boolean }) {
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <path d="M5 3v18" stroke={c} strokeWidth={w} strokeLinecap="round" />
         <path d="M5 4h11l-2.5 4.5L16 13H5" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (icon === 'wallet') {
+    return (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <rect x="2" y="6" width="20" height="14" rx="2.5" stroke={c} strokeWidth={w} />
+        <path d="M2 10h20" stroke={c} strokeWidth={w} strokeLinecap="round" />
+        <circle cx="17" cy="15" r="1.5" fill={c} />
       </svg>
     );
   }

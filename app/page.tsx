@@ -309,7 +309,7 @@ export default function HomePage() {
               }}
             >
               <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>
-                카테고리 별 사용량
+                이번 달 상세 내역
               </div>
               <button
                 onClick={() => router.push('/expenses')}

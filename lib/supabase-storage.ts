@@ -810,6 +810,49 @@ export async function saveGoalSettings(goal: GoalSettings): Promise<void> {
   }
 }
 
+// ==================== 투자 설정 (merchant_categories JSONB 재사용) ====================
+
+export interface InvestSettings {
+  annualSalary: number;   // 세전 연봉 (성과금 제외)
+  bonusIncome: number;    // 세전 성과금·기타 연간 추가소득
+  useCustomSalary: boolean; // true면 직접 입력값 사용, false면 월수익×12 역산
+}
+
+async function getMerchantCategories(supabase: ReturnType<typeof getSupabase>, userId: string): Promise<Record<string, string>> {
+  const { data } = await supabase.from('user_settings').select('merchant_categories').eq('user_id', userId).single();
+  return (data?.merchant_categories as Record<string, string>) || {};
+}
+
+export async function getInvestSettings(): Promise<InvestSettings> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { annualSalary: 0, bonusIncome: 0, useCustomSalary: false };
+
+  const cats = await getMerchantCategories(supabase, user.id);
+  return {
+    annualSalary: Number(cats['__invest_annual_salary'] || 0),
+    bonusIncome: Number(cats['__invest_bonus_income'] || 0),
+    useCustomSalary: cats['__invest_use_custom_salary'] === 'true',
+  };
+}
+
+export async function saveInvestSettings(s: InvestSettings): Promise<void> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const cats = await getMerchantCategories(supabase, user.id);
+  cats['__invest_annual_salary'] = String(s.annualSalary);
+  cats['__invest_bonus_income'] = String(s.bonusIncome);
+  cats['__invest_use_custom_salary'] = String(s.useCustomSalary);
+
+  await supabase.from('user_settings').upsert({
+    user_id: user.id,
+    merchant_categories: cats,
+    updated_at: new Date().toISOString(),
+  });
+}
+
 // ==================== 통계 계산 ====================
 
 export async function getMonthlyTotal(month: string): Promise<number> {

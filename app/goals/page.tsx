@@ -309,8 +309,9 @@ export default function GoalsPage() {
               num="3"
               title="투자 수익으로 보완"
               desc={`월 ${formatWon(shortfall)} 추가 수익 필요`}
-              detail={`참고: 1억 원 운용 시 연 ${Math.min(999, (shortfall * 12) / 100000000 * 100).toFixed(1)}% 수익률에 해당`}
+              detail="투자 탭에서 목표 달성을 위한 필요 수익률 확인하기 →"
               tone="warn"
+              onClick={() => router.push('/invest?tab=goal')}
             />
             <SolutionRow
               num="4"
@@ -600,8 +601,8 @@ function SimulationResult({ tone, label, detail, monthlySavings, requiredMonthly
   );
 }
 
-function SolutionRow({ num, title, desc, detail, tone }: {
-  num: string; title: string; desc: string; detail: string; tone: 'accent' | 'blue' | 'warn' | 'neutral';
+function SolutionRow({ num, title, desc, detail, tone, onClick }: {
+  num: string; title: string; desc: string; detail: string; tone: 'accent' | 'blue' | 'warn' | 'neutral'; onClick?: () => void;
 }) {
   const tones = {
     accent: { bg: T.accentSoft, fg: T.accent },
@@ -611,7 +612,10 @@ function SolutionRow({ num, title, desc, detail, tone }: {
   };
   const t = tones[tone];
   return (
-    <div style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${T.divider}` }}>
+    <div
+      onClick={onClick}
+      style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${T.divider}`, cursor: onClick ? 'pointer' : 'default' }}
+    >
       <div style={{ width: 28, height: 28, borderRadius: 14, background: t.bg, color: t.fg, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
         {num}
       </div>

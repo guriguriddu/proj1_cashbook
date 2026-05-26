@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Screen, ScreenBody, T, BottomSheet, PrimaryButton } from '@/components/ui';
-import { getInvestSettings, saveInvestSettings } from '@/lib/supabase-storage';
+import { getInvestSettings, saveInvestSettings, getCategoryBudgetForMonth, getCurrentMonth } from '@/lib/supabase-storage';
+import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
 
 // ─── 세금 상수 ───────────────────────────────────────────────────────────────
 
@@ -194,9 +195,23 @@ function fmtPct(r: number): string {
   return (r * 100).toFixed(1) + '%';
 }
 
+// 목표 금액 달성을 위한 필요 월 수익률 역산 (bisection)
+function solveMonthlyRate(pv: number, pmt: number, fv: number, n: number): number {
+  if (n <= 0) return 0;
+  if (fv <= pv + pmt * n) return 0;
+  let lo = 1e-8, hi = 1.0;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    const factor = Math.pow(1 + mid, n);
+    const calc = pv * factor + (pmt * (factor - 1)) / mid;
+    if (calc < fv) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
 // ─── 메인 페이지 ─────────────────────────────────────────────────────────────
 
-type Tab = 'dividend' | 'capital' | 'simulation';
+type Tab = 'dividend' | 'capital' | 'simulation' | 'goal';
 
 export default function InvestPage() {
   const router = useRouter();
@@ -217,7 +232,13 @@ export default function InvestPage() {
   // 종합소득세 기준 근로소득 (세전 연간 총소득)
   const laborIncome = investSettings.annualSalary + investSettings.bonusIncome;
 
-  const [tab, setTab] = useState<Tab>('dividend');
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window !== 'undefined') {
+      const t = new URLSearchParams(window.location.search).get('tab') as Tab;
+      if (['dividend', 'capital', 'simulation', 'goal'].includes(t)) return t;
+    }
+    return 'dividend';
+  });
 
   // 배당 계산기 입력값
   const [divInputs, setDivInputs] = useState({
@@ -319,6 +340,7 @@ export default function InvestPage() {
     { id: 'dividend', label: '배당세 계산' },
     { id: 'capital', label: '양도소득세' },
     { id: 'simulation', label: '투자 시뮬' },
+    { id: 'goal', label: '목표 역산' },
   ];
 
   const fieldDefs: Record<string, {
@@ -659,6 +681,11 @@ export default function InvestPage() {
           </div>
         )}
 
+        {/* ── 목표 역산 ── */}
+        {tab === 'goal' && (
+          <GoalReverseTab laborIncome={laborIncome} onSwitchTab={setTab} />
+        )}
+
         <div style={{ height: 20 }} />
       </ScreenBody>
 
@@ -852,6 +879,165 @@ function NumberEditSheet({ title, value, onClose, onSave, unit = '원', min = 0,
         </div>
       </div>
     </BottomSheet>
+  );
+}
+
+// ─── 목표 역산 탭 ─────────────────────────────────────────────────────────────
+
+function GoalReverseTab({ laborIncome, onSwitchTab }: { laborIncome: number; onSwitchTab: (t: Tab) => void }) {
+  const router = useRouter();
+  const { settings, loading: goalLoading } = useGoalSettings();
+  const { budget, loading: budgetLoading } = useBudget();
+
+  const currentMonth = getCurrentMonth();
+  const monthlyIncome = settings.monthlyIncome || 4_000_000;
+  const targetAmount = settings.goalAmount || 100_000_000;
+  const currentAssets = settings.currentAssets || 0;
+  const targetMonths = settings.goalMonths || 36;
+
+  const totalBudget = budget
+    ? Object.keys({ ...budget.categoryBudgets, ...(budget.monthlyCategoryBudgets?.[currentMonth] ?? {}) }).reduce(
+        (sum, catId) => sum + getCategoryBudgetForMonth(budget, currentMonth, catId), 0
+      )
+    : 0;
+  const savingCategoryBudget = budget ? getCategoryBudgetForMonth(budget, currentMonth, 'saving') : 0;
+  const monthlyBudget = totalBudget - savingCategoryBudget;
+  const monthlySavings = Math.max(0, monthlyIncome - monthlyBudget);
+  const gap = Math.max(0, targetAmount - currentAssets);
+
+  if (goalLoading || budgetLoading) {
+    return <div style={{ padding: '20px', color: T.textSec, fontSize: 14 }}>로딩 중...</div>;
+  }
+
+  const requiredMonthlyRate = solveMonthlyRate(currentAssets, monthlySavings, targetAmount, targetMonths);
+  const requiredAnnualRate = (Math.pow(1 + requiredMonthlyRate, 12) - 1) * 100;
+  const isAchievableWithSavingsOnly = requiredMonthlyRate < 1e-6;
+
+  const benchmarks = [
+    { name: 'S&P 500 (10년 평균)', annualRate: 10, risk: '중', color: '#2563EB' },
+    { name: 'QQQ (10년 평균)', annualRate: 14, risk: '중상', color: '#7C3AED' },
+    { name: '글로벌 배당 ETF', annualRate: 7, risk: '중하', color: '#059669' },
+    { name: '예금·채권 (국내)', annualRate: 3.5, risk: '낮음', color: '#6B7280' },
+  ];
+
+  const rateColor = requiredAnnualRate > 25 ? '#F87171' : requiredAnnualRate > 12 ? '#FCD34D' : '#34D399';
+
+  return (
+    <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* 목표 요약 */}
+      <SectionCard title="목표 탭 데이터">
+        <ResultRow label="목표 금액" value={formatWon(targetAmount)} />
+        <ResultRow label="현재 보유 자산" value={formatWon(currentAssets)} />
+        <ResultRow label="남은 금액 (Gap)" value={formatWon(gap)} color={T.text} />
+        <ResultRow label="목표 기간" value={`${targetMonths}개월 (${(targetMonths / 12).toFixed(1)}년)`} />
+        <ResultRow
+          label="월 저축 가능액"
+          value={formatWon(monthlySavings)}
+          color={monthlySavings > 0 ? T.accent : T.danger}
+          big
+        />
+        <div style={{ padding: '8px 16px 12px' }}>
+          <button
+            onClick={() => router.push('/goals')}
+            style={{ border: 0, background: 'transparent', color: T.textTer, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+          >
+            목표 수정하기 →
+          </button>
+        </div>
+      </SectionCard>
+
+      {/* 필요 수익률 */}
+      {isAchievableWithSavingsOnly ? (
+        <div style={{ background: T.accentSoft, borderRadius: 16, padding: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.accent, marginBottom: 6 }}>
+            저축만으로 달성 가능해요!
+          </div>
+          <div style={{ fontSize: 14, color: T.accent, fontWeight: 600, lineHeight: 1.6 }}>
+            현재 월 저축액({formatWon(monthlySavings)})으로 투자 수익 없이도 목표 기간 내 달성 가능해요.<br />
+            투자까지 더하면 더 빠르게 달성하거나 목표를 높일 수 있어요.
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: T.text, borderRadius: 18, padding: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>
+            목표 달성을 위한 필요 연 수익률 (세전)
+          </div>
+          <div style={{
+            fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em',
+            fontVariantNumeric: 'tabular-nums', marginBottom: 4,
+            color: rateColor,
+          }}>
+            {requiredAnnualRate.toFixed(1)}%
+          </div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+            월 저축 {formatWon(monthlySavings)} + 투자 수익 합산 기준
+          </div>
+          {requiredAnnualRate > 25 && (
+            <div style={{ marginTop: 12, padding: '10px 12px', background: 'rgba(248,113,113,0.15)', borderRadius: 10, fontSize: 12, color: '#FCA5A5', fontWeight: 600, lineHeight: 1.6 }}>
+              ⚠️ 연 25% 초과는 현실적으로 달성하기 매우 어려운 수익률이에요.<br />
+              목표 금액을 낮추거나 기간을 늘리는 것을 고려해보세요.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 벤치마크 비교 */}
+      {!isAchievableWithSavingsOnly && (
+        <SectionCard title="벤치마크 비교">
+          {benchmarks.map((b, i) => {
+            const isEnough = b.annualRate >= requiredAnnualRate;
+            const isLast = i === benchmarks.length - 1;
+            return (
+              <div key={b.name} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '13px 16px',
+                borderBottom: isLast ? 'none' : `1px solid ${T.divider}`,
+                background: isEnough ? T.accentSoft : 'transparent',
+              }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text, letterSpacing: '-0.01em' }}>{b.name}</div>
+                  <div style={{ fontSize: 11, color: T.textTer, marginTop: 2 }}>리스크 {b.risk}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: b.color, fontVariantNumeric: 'tabular-nums' }}>
+                    연 {b.annualRate}%
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, marginTop: 2, color: isEnough ? T.accent : T.danger }}>
+                    {isEnough ? '✓ 목표 달성 가능' : '✗ 부족'}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </SectionCard>
+      )}
+
+      {/* 투자 시뮬레이션 연결 */}
+      <button
+        onClick={() => onSwitchTab('simulation')}
+        style={{
+          border: `1px solid ${T.divider}`, background: T.bg, borderRadius: 14, padding: '14px 16px',
+          cursor: 'pointer', width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, letterSpacing: '-0.01em', marginBottom: 2 }}>
+            투자 시뮬레이션으로 확인
+          </div>
+          <div style={{ fontSize: 12, color: T.textSec, fontWeight: 500 }}>
+            수익률 입력 시 세후 예상 수익액 계산
+          </div>
+        </div>
+        <svg width="6" height="10" viewBox="0 0 6 10" fill="none">
+          <path d="M1 1l4 4-4 4" stroke={T.textTer} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      <InfoBanner tone="neutral">
+        위 수익률은 세전(gross) 기준이에요. 실제 투자 시 배당세(국내 15.4% / 해외 15%), 해외 주식 양도세(22%)가 추가로 부과돼요.<br />
+        과거 수익률이 미래를 보장하지 않으며, 원금 손실이 발생할 수 있어요.
+      </InfoBanner>
+    </div>
   );
 }
 

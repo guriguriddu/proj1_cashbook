@@ -144,20 +144,37 @@ export default function HomePage() {
             />
           </svg>
         </button>
-        <button
-          onClick={() => router.push('/mypage')}
-          aria-label="프로필"
-          style={{
-            width: 40, height: 40, border: 0, background: 'transparent',
-            borderRadius: 20, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-            <circle cx="11" cy="7.5" r="3.5" stroke={T.text} strokeWidth="1.8" />
-            <path d="M3.5 18.5c0-3 3.4-5.5 7.5-5.5s7.5 2.5 7.5 5.5" stroke={T.text} strokeWidth="1.8" strokeLinecap="round" />
-          </svg>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button
+            onClick={() => router.push('/budget')}
+            aria-label="예산 설정"
+            style={{
+              width: 40, height: 40, border: 0, background: 'transparent',
+              borderRadius: 20, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <rect x="1" y="5" width="20" height="14" rx="2.5" stroke={T.text} strokeWidth="1.8" />
+              <path d="M1 9h20" stroke={T.text} strokeWidth="1.8" strokeLinecap="round" />
+              <circle cx="16" cy="14" r="1.5" fill={T.text} />
+            </svg>
+          </button>
+          <button
+            onClick={() => router.push('/mypage')}
+            aria-label="프로필"
+            style={{
+              width: 40, height: 40, border: 0, background: 'transparent',
+              borderRadius: 20, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <circle cx="11" cy="7.5" r="3.5" stroke={T.text} strokeWidth="1.8" />
+              <path d="M3.5 18.5c0-3 3.4-5.5 7.5-5.5s7.5 2.5 7.5 5.5" stroke={T.text} strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <ScreenBody>

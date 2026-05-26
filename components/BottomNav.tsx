@@ -13,7 +13,6 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { id: 'home', href: '/', label: '홈', icon: 'home' },
-  { id: 'budget', href: '/budget', label: '예산', icon: 'wallet' },
   { id: 'add', href: '/add', label: '추가', icon: 'plus' },
   { id: 'goals', href: '/goals', label: '목표', icon: 'flag' },
   { id: 'invest', href: '/invest', label: '투자', icon: 'chart' },

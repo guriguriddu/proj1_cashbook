@@ -56,7 +56,8 @@ CREATE TABLE IF NOT EXISTS category_budgets (
   budget_id UUID REFERENCES budgets(id) ON DELETE CASCADE NOT NULL,
   category_id TEXT NOT NULL,
   amount INTEGER NOT NULL,
-  UNIQUE(budget_id, category_id)
+  month TEXT DEFAULT NULL,
+  UNIQUE NULLS NOT DISTINCT (budget_id, category_id, month)
 );
 
 -- 6. user_settings 테이블: 사용자 설정 (목표 포함)

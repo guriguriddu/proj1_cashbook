@@ -8,7 +8,6 @@ import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
 
 // ─── 세금 상수 ───────────────────────────────────────────────────────────────
 
-// 종합소득세 과세표준 구간 (2024년 기준)
 const INCOME_TAX_BRACKETS = [
   { limit: 14_000_000, rate: 0.06, deduction: 0 },
   { limit: 50_000_000, rate: 0.15, deduction: 1_260_000 },
@@ -27,85 +26,63 @@ function calcIncomeTax(taxable: number): number {
   return 0;
 }
 
-// 지방소득세 10%
 function calcLocalTax(incomeTax: number): number {
   return incomeTax * 0.1;
 }
 
-// 건강보험료 (직장가입자 보수외소득 연 2천만 초과분)
-// 피부양자: 금융소득 연 1천만 초과 시 탈락
-const HEALTH_INS_RATE = 0.0709; // 2024년 직장 근로자 본인 부담 요율
-const HEALTH_INS_LONG_CARE = 0.1295; // 장기요양보험 (건보료의 12.95%)
+const HEALTH_INS_RATE = 0.0709;
+const HEALTH_INS_LONG_CARE = 0.1295;
 
 interface TaxResult {
-  grossDividend: number;        // 세전 배당금 (원)
-  withheld: number;             // 원천징수세 (배당소득세)
-  isComprehensive: boolean;     // 종합과세 해당 여부
-  comprehensiveTax: number;     // 종합과세 추가납부세액
-  localTax: number;             // 지방소득세
-  healthIns: number;            // 건보료 추가분
-  netDividend: number;          // 실수령액
-  effectiveRate: number;        // 실효세율
-  losePidayang: boolean;        // 피부양자 탈락 여부
+  grossDividend: number;
+  withheld: number;
+  isComprehensive: boolean;
+  comprehensiveTax: number;
+  localTax: number;
+  healthIns: number;
+  netDividend: number;
+  effectiveRate: number;
+  losePidayang: boolean;
 }
-
-// ─── 투자 세금 계산 ──────────────────────────────────────────────────────────
 
 function calcDividendTax(params: {
   grossDividend: number;
-  otherFinancialIncome: number; // 배당 외 금융소득 (이자 등)
-  laborIncome: number;          // 근로소득 (종합과세 합산용)
-  isDomestic: boolean;          // 국내 주식 여부
-  isHealthInsured: boolean;     // 직장 건강보험 가입 여부
-  isPidayang: boolean;          // 피부양자 여부
+  otherFinancialIncome: number;
+  laborIncome: number;
+  isDomestic: boolean;
+  isHealthInsured: boolean;
+  isPidayang: boolean;
 }): TaxResult {
   const { grossDividend, otherFinancialIncome, laborIncome, isDomestic, isHealthInsured, isPidayang } = params;
-
-  // 원천징수세율: 국내 15.4%, 해외 15% (조약 기준)
   const withholdRate = isDomestic ? 0.154 : 0.15;
   const withheld = Math.floor(grossDividend * withholdRate);
-
-  // 금융소득 총합
   const totalFinancial = grossDividend + otherFinancialIncome;
-  const COMPREHENSIVE_THRESHOLD = 20_000_000; // 2천만원
+  const COMPREHENSIVE_THRESHOLD = 20_000_000;
 
   let comprehensiveTax = 0;
   let localTax = 0;
 
   if (totalFinancial > COMPREHENSIVE_THRESHOLD) {
-    // 2천만 초과분 → 종합과세 (근로소득과 합산)
     const excessFinancial = totalFinancial - COMPREHENSIVE_THRESHOLD;
-    // 기준: 2천만 이하 분리과세(14%) + 초과분 종합과세
     const separateTax = COMPREHENSIVE_THRESHOLD * 0.14;
-
-    // 종합소득 = 근로소득 + 금융소득 초과분
     const totalTaxable = laborIncome + excessFinancial;
     const comprehensiveTotal = calcIncomeTax(totalTaxable);
     const laborOnly = calcIncomeTax(laborIncome);
-
-    // 추가납부세액 = (종합과세 합산세액 - 근로소득세) - 분리과세세액 차이
     const additionalComprehensive = comprehensiveTotal - laborOnly;
-    // 이미 원천징수분과 비교해서 추가납부액 산정
     const alreadyWithheld14 = separateTax + COMPREHENSIVE_THRESHOLD * 0 + excessFinancial * 0.14;
     comprehensiveTax = Math.max(0, additionalComprehensive - (alreadyWithheld14 - separateTax));
-
     localTax = calcLocalTax(comprehensiveTax);
   }
 
-  // 건강보험료
-  // 피부양자: 금융소득 연 1천만 초과 시 탈락
   const losePidayang = isPidayang && totalFinancial > 10_000_000;
   let healthIns = 0;
-
   if (isHealthInsured && !isPidayang) {
-    // 직장가입자: 보수외소득 연 2천만 초과 시 추가 건보료
     if (totalFinancial > COMPREHENSIVE_THRESHOLD) {
       const excessForHealth = totalFinancial - COMPREHENSIVE_THRESHOLD;
       const healthBase = excessForHealth * HEALTH_INS_RATE;
       healthIns = Math.floor(healthBase * (1 + HEALTH_INS_LONG_CARE));
     }
   } else if (losePidayang) {
-    // 피부양자 탈락 → 지역가입자 전환 예상 건보료 (금융소득 기준 개략)
     const healthBase = totalFinancial * HEALTH_INS_RATE;
     healthIns = Math.floor(healthBase * (1 + HEALTH_INS_LONG_CARE));
   }
@@ -122,34 +99,29 @@ function calcDividendTax(params: {
   };
 }
 
-// ─── 양도소득세 계산 ──────────────────────────────────────────────────────────
-
 interface CapGainResult {
   gain: number;
-  transactionTax: number;      // 증권거래세 (국내 소액주주)
-  isTaxExempt: boolean;        // 국내 소액주주 비과세
+  transactionTax: number;
+  isTaxExempt: boolean;
   deduction: number;
   taxable: number;
-  tax: number;                 // 양도소득세 + 지방소득세
+  tax: number;
   net: number;
   effectiveRate: number;
 }
 
 function calcCapitalGainTax(params: {
   gain: number;
-  salePrice: number;           // 매도금액 (증권거래세 계산용)
+  salePrice: number;
   isDomestic: boolean;
-  isMajorShareholder: boolean; // 국내 대주주 여부
+  isMajorShareholder: boolean;
   market: 'kospi' | 'kosdaq' | 'overseas';
 }): CapGainResult {
   const { gain, salePrice, isDomestic, isMajorShareholder, market } = params;
-
-  // 증권거래세 (국내만, 매도금액 기준 세전)
   const txTaxRate = market === 'kospi' ? 0.0015 : market === 'kosdaq' ? 0.002 : 0;
   const transactionTax = Math.floor(salePrice * txTaxRate);
 
   if (isDomestic && !isMajorShareholder) {
-    // 소액주주: 매매차익 비과세
     return { gain, transactionTax, isTaxExempt: true, deduction: 0, taxable: 0, tax: 0, net: gain - transactionTax, effectiveRate: 0 };
   }
 
@@ -157,7 +129,6 @@ function calcCapitalGainTax(params: {
   let deduction = 0;
 
   if (isDomestic && isMajorShareholder) {
-    // 대주주: 과세표준 3억 이하 22%, 초과분 27.5%
     const BRACKET = 300_000_000;
     if (gain <= BRACKET) {
       tax = Math.floor(gain * 0.22);
@@ -165,10 +136,9 @@ function calcCapitalGainTax(params: {
       tax = Math.floor(BRACKET * 0.22 + (gain - BRACKET) * 0.275);
     }
   } else {
-    // 해외 주식·ETF: 250만 공제 후 22%
     deduction = Math.min(2_500_000, gain);
     const taxable = Math.max(0, gain - 2_500_000);
-    tax = Math.floor(taxable * 0.22); // 20% 양도세 + 2% 지방소득세
+    tax = Math.floor(taxable * 0.22);
   }
 
   const taxable = Math.max(0, gain - deduction);
@@ -177,8 +147,6 @@ function calcCapitalGainTax(params: {
   const effectiveRate = gain > 0 ? totalOut / gain : 0;
   return { gain, transactionTax, isTaxExempt: false, deduction, taxable, tax, net, effectiveRate };
 }
-
-// ─── 포맷 헬퍼 ──────────────────────────────────────────────────────────────
 
 function formatWon(n: number): string {
   const abs = Math.abs(Math.floor(n));
@@ -195,7 +163,6 @@ function fmtPct(r: number): string {
   return (r * 100).toFixed(1) + '%';
 }
 
-// 목표 금액 달성을 위한 필요 월 수익률 역산 (bisection)
 function solveMonthlyRate(pv: number, pmt: number, fv: number, n: number): number {
   if (n <= 0) return 0;
   if (fv <= pv + pmt * n) return 0;
@@ -209,13 +176,17 @@ function solveMonthlyRate(pv: number, pmt: number, fv: number, n: number): numbe
   return (lo + hi) / 2;
 }
 
-// ─── 메인 페이지 ─────────────────────────────────────────────────────────────
+// ─── 타입 ────────────────────────────────────────────────────────────────────
 
-type Tab = 'dividend' | 'capital' | 'simulation' | 'goal';
+type Tab = 'simulation' | 'tax';
+type SimMode = 'forward' | 'goal';
+type TaxType = 'dividend' | 'capital';
+
+// ─── 메인 페이지 ─────────────────────────────────────────────────────────────
 
 export default function InvestPage() {
   const router = useRouter();
-  // 연봉 설정 (세전 직접 입력)
+
   const [investSettings, setInvestSettings] = useState({
     annualSalary: 0,
     bonusIncome: 0,
@@ -229,13 +200,29 @@ export default function InvestPage() {
     });
   }, []);
 
-  // 종합소득세 기준 근로소득 (세전 연간 총소득)
   const laborIncome = investSettings.annualSalary + investSettings.bonusIncome;
 
+  // 탭/모드 상태 (URL 파라미터에서 초기화)
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window !== 'undefined') {
-      const t = new URLSearchParams(window.location.search).get('tab') as Tab;
-      if (['dividend', 'capital', 'simulation', 'goal'].includes(t)) return t;
+      const t = new URLSearchParams(window.location.search).get('tab');
+      if (t === 'dividend' || t === 'capital') return 'tax';
+    }
+    return 'simulation';
+  });
+
+  const [simMode, setSimMode] = useState<SimMode>(() => {
+    if (typeof window !== 'undefined') {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      if (t === 'goal') return 'goal';
+    }
+    return 'forward';
+  });
+
+  const [taxType, setTaxType] = useState<TaxType>(() => {
+    if (typeof window !== 'undefined') {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      if (t === 'capital') return 'capital';
     }
     return 'dividend';
   });
@@ -262,9 +249,9 @@ export default function InvestPage() {
   const [simInputs, setSimInputs] = useState({
     principal: 10_000_000,
     monthlyAdd: 500_000,
-    annualReturn: 7,   // %
+    annualReturn: 7,
     years: 10,
-    dividendYield: 3,  // %
+    dividendYield: 3,
     isDomestic: false,
     isHealthInsured: true,
     isPidayang: false,
@@ -272,44 +259,30 @@ export default function InvestPage() {
 
   const [editingField, setEditingField] = useState<string | null>(null);
 
-  // 배당세 계산
+  // 계산
   const divResult = calcDividendTax({ ...divInputs, laborIncome });
-
-  // 양도소득세 계산
   const capResult = calcCapitalGainTax(capInputs);
 
-  // 투자 시뮬레이션 계산
   const simResult = (() => {
     const { principal, monthlyAdd, annualReturn, years, dividendYield, isDomestic, isHealthInsured, isPidayang } = simInputs;
     const monthlyRate = annualReturn / 100 / 12;
     const months = years * 12;
-
-    // 복리 계산 (배당 재투자 포함)
     let balance = principal;
     let totalInvested = principal;
     let totalDividendGross = 0;
     let totalDividendNet = 0;
-    let totalCapitalGainGross = 0;
 
     for (let m = 0; m < months; m++) {
       balance += monthlyAdd;
       totalInvested += monthlyAdd;
       const monthlyDiv = balance * (dividendYield / 100 / 12);
-      const divTax = calcDividendTax({
-        grossDividend: monthlyDiv,
-        otherFinancialIncome: 0,
-        laborIncome,
-        isDomestic,
-        isHealthInsured,
-        isPidayang,
-      });
+      const divTax = calcDividendTax({ grossDividend: monthlyDiv, otherFinancialIncome: 0, laborIncome, isDomestic, isHealthInsured, isPidayang });
       totalDividendGross += monthlyDiv;
       totalDividendNet += divTax.netDividend;
-      // 성장분 (배당 제외 자본이득)
       balance = balance * (1 + monthlyRate - dividendYield / 100 / 12) + divTax.netDividend;
     }
 
-    totalCapitalGainGross = Math.max(0, balance - totalInvested);
+    const totalCapitalGainGross = Math.max(0, balance - totalInvested);
     const capTax = calcCapitalGainTax({
       gain: totalCapitalGainGross,
       salePrice: balance,
@@ -320,28 +293,10 @@ export default function InvestPage() {
 
     const finalBalance = balance - capTax.tax;
     const totalReturn = finalBalance - totalInvested;
-    const effectiveAnnualReturn = totalInvested > 0
-      ? (Math.pow(finalBalance / totalInvested, 1 / years) - 1) * 100
-      : 0;
+    const effectiveAnnualReturn = totalInvested > 0 ? (Math.pow(finalBalance / totalInvested, 1 / years) - 1) * 100 : 0;
 
-    return {
-      totalInvested,
-      finalBalance,
-      totalReturn,
-      totalDividendGross,
-      totalDividendNet,
-      totalCapitalGainGross,
-      capitalGainTax: capTax.tax,
-      effectiveAnnualReturn,
-    };
+    return { totalInvested, finalBalance, totalReturn, totalDividendGross, totalDividendNet, totalCapitalGainGross, capitalGainTax: capTax.tax, effectiveAnnualReturn };
   })();
-
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'dividend', label: '배당세 계산' },
-    { id: 'capital', label: '양도소득세' },
-    { id: 'simulation', label: '투자 시뮬' },
-    { id: 'goal', label: '목표 역산' },
-  ];
 
   const fieldDefs: Record<string, {
     label: string; value: number; unit: string; step: number; min?: number; max?: number;
@@ -394,6 +349,11 @@ export default function InvestPage() {
     },
   };
 
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'simulation', label: '투자 시뮬' },
+    { id: 'tax', label: '세금 계산' },
+  ];
+
   return (
     <Screen>
       {/* 헤더 */}
@@ -402,288 +362,336 @@ export default function InvestPage() {
         padding: '60px 20px 8px', position: 'sticky', top: 0, background: T.bg, zIndex: 5,
       }}>
         <span style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>투자</span>
-        <button
-          onClick={() => router.push('/mypage')}
-          style={{ width: 40, height: 40, border: 0, background: 'transparent', borderRadius: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-            <circle cx="11" cy="7.5" r="3.5" stroke={T.text} strokeWidth="1.8" />
-            <path d="M3.5 18.5c0-3 3.4-5.5 7.5-5.5s7.5 2.5 7.5 5.5" stroke={T.text} strokeWidth="1.8" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
-
-      {/* 탭 */}
-      <div style={{ display: 'flex', gap: 6, padding: '8px 20px 4px', overflowX: 'auto' }}>
-        {TABS.map(t => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* 세전 소득 입력 버튼 */}
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => setSalarySheetOpen(true)}
             style={{
-              flexShrink: 0, padding: '8px 16px', borderRadius: 999, border: 0,
-              background: tab === t.id ? T.text : T.bgMuted,
-              color: tab === t.id ? '#fff' : T.textSec,
-              fontSize: 13, fontWeight: 600, cursor: 'pointer', letterSpacing: '-0.01em',
+              padding: '6px 12px', borderRadius: 999, border: `1px solid ${laborIncome > 0 ? T.divider : T.warn}`,
+              background: laborIncome > 0 ? T.bgMuted : T.warnSoft,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
             }}
           >
-            {t.label}
+            <span style={{ fontSize: 11, fontWeight: 600, color: laborIncome > 0 ? T.textSec : '#92400E' }}>
+              세전 소득
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: laborIncome > 0 ? T.text : '#92400E', fontVariantNumeric: 'tabular-nums' }}>
+              {laborIncome > 0 ? formatWon(laborIncome) : '미입력'}
+            </span>
           </button>
-        ))}
+          <button
+            onClick={() => router.push('/mypage')}
+            style={{ width: 36, height: 36, border: 0, background: 'transparent', borderRadius: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <circle cx="11" cy="7.5" r="3.5" stroke={T.text} strokeWidth="1.8" />
+              <path d="M3.5 18.5c0-3 3.4-5.5 7.5-5.5s7.5 2.5 7.5 5.5" stroke={T.text} strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* 메인 탭 (2개) */}
+      <div style={{ padding: '4px 20px 0', display: 'flex', gap: 0, background: T.bg }}>
+        <div style={{ display: 'flex', flex: 1, background: T.bgMuted, borderRadius: 12, padding: 4 }}>
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                flex: 1, padding: '9px 0', borderRadius: 8, border: 0,
+                background: tab === t.id ? T.bg : 'transparent',
+                color: tab === t.id ? T.text : T.textTer,
+                fontSize: 14, fontWeight: tab === t.id ? 700 : 600,
+                cursor: 'pointer', letterSpacing: '-0.01em',
+                boxShadow: tab === t.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                transition: 'all .15s',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <ScreenBody>
-        {/* ── 배당세 계산 ── */}
-        {tab === 'dividend' && (
-          <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* 근로소득 기준 카드 */}
-            <button
-              onClick={() => setSalarySheetOpen(true)}
-              style={{
-                width: '100%', background: laborIncome > 0 ? T.bg : T.warnSoft,
-                border: `1px solid ${laborIncome > 0 ? T.divider : T.warn}`,
-                borderRadius: 16, padding: '14px 16px',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: T.textTer, marginBottom: 2 }}>
-                  세전 근로소득 (종합과세 합산용)
-                </div>
-                {laborIncome > 0 ? (
-                  <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums' }}>
-                    {formatWon(laborIncome)}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#92400E' }}>
-                    세전 연봉을 입력해주세요 (종합과세 계산 필요)
-                  </div>
-                )}
-              </div>
-              <span style={{
-                flexShrink: 0, padding: '6px 12px', borderRadius: 999,
-                background: T.bgMuted, color: T.text, fontSize: 12, fontWeight: 600, marginLeft: 12,
-              }}>
-                {laborIncome > 0 ? '수정' : '입력'}
-              </span>
-            </button>
-
-            {/* 입력 카드 */}
-            <SectionCard title="입력">
-              <InputRow label="연간 배당금 (세전)" value={formatWon(divInputs.grossDividend)} onTap={() => setEditingField('grossDividend')} />
-              <InputRow label="기타 금융소득 (이자 등)" value={formatWon(divInputs.otherFinancialIncome)} onTap={() => setEditingField('otherFinancialIncome')} />
-              <ToggleRow label="국내 주식" value={divInputs.isDomestic} onChange={v => setDivInputs(p => ({ ...p, isDomestic: v }))} />
-              <ToggleRow label="직장 건강보험 가입" value={divInputs.isHealthInsured} onChange={v => setDivInputs(p => ({ ...p, isHealthInsured: v }))} />
-              <ToggleRow label="피부양자" value={divInputs.isPidayang} onChange={v => setDivInputs(p => ({ ...p, isPidayang: v }))} noBorder />
-            </SectionCard>
-
-            {/* 결과 카드 */}
-            <SectionCard title="세금 내역">
-              <ResultRow label={`원천징수 (${divInputs.isDomestic ? '15.4%' : '15%'})`} value={formatWon(divResult.withheld)} color={T.danger} />
-              {divResult.isComprehensive && (
-                <ResultRow label="종합소득세 추가납부" value={formatWon(divResult.comprehensiveTax)} color={T.danger} />
-              )}
-              {divResult.isComprehensive && divResult.localTax > 0 && (
-                <ResultRow label="지방소득세" value={formatWon(divResult.localTax)} color={T.danger} />
-              )}
-              {divResult.healthIns > 0 && (
-                <ResultRow label={divResult.losePidayang ? '건보료 (피부양자 탈락)' : '건보료 추가분'} value={formatWon(divResult.healthIns)} color={T.warn} />
-              )}
-              <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
-              <ResultRow label="실수령 배당금" value={formatWon(divResult.netDividend)} color={T.accent} big />
-              <ResultRow label="실효세율" value={fmtPct(divResult.effectiveRate)} color={T.textSec} />
-            </SectionCard>
-
-            {/* 알림 배너 */}
-            {divResult.isComprehensive && (
-              <InfoBanner tone="warn">
-                금융소득이 연 2천만원을 초과해 종합과세 대상이에요. 다음 해 5월에 종합소득세를 신고해야 합니다.
-              </InfoBanner>
-            )}
-            {divResult.losePidayang && (
-              <InfoBanner tone="danger">
-                금융소득이 연 1천만원을 초과해 건강보험 피부양자 자격을 잃을 수 있어요.
-              </InfoBanner>
-            )}
-
-            <InfoBanner tone="neutral">
-              종합과세 여부는 금융소득(배당+이자) 합계가 연 2천만원을 초과하는지로 판단해요.
-              근로소득은 위 "수정" 버튼에서 세전 연봉·성과금을 직접 입력할 수 있어요.
-            </InfoBanner>
-          </div>
-        )}
-
-        {/* ── 양도소득세 ── */}
-        {tab === 'capital' && (
-          <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* 세전 기준 안내 */}
-            <InfoBanner tone="neutral">
-              💡 세금 계산 기준은 모두 <b>세전(gross)</b>이에요.<br />
-              양도세 = 세전 양도차익(매도가 − 매수가 − 거래비용)에 부과<br />
-              배당세 = 세전 배당금에서 원천징수 후 지급
-            </InfoBanner>
-
-            {/* 국내/해외 선택 */}
-            <SectionCard title="주식 종류">
-              <ToggleRow
-                label="국내 주식 (코스피·코스닥·ETF)"
-                value={capInputs.isDomestic}
-                onChange={v => setCapInputs(p => ({ ...p, isDomestic: v, market: v ? 'kospi' : 'overseas' }))}
-              />
-              {capInputs.isDomestic && (
-                <>
-                  {/* 시장 선택 */}
-                  <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.divider}` }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec, marginBottom: 8 }}>시장 선택</div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      {(['kospi', 'kosdaq'] as const).map(m => (
-                        <button
-                          key={m}
-                          onClick={() => setCapInputs(p => ({ ...p, market: m }))}
-                          style={{
-                            flex: 1, padding: '8px 0', borderRadius: 10, border: 0, cursor: 'pointer',
-                            background: capInputs.market === m ? T.text : T.bgMuted,
-                            color: capInputs.market === m ? '#fff' : T.textSec,
-                            fontSize: 13, fontWeight: 600,
-                          }}
-                        >
-                          {m === 'kospi' ? '코스피 (거래세 0.15%)' : '코스닥 (거래세 0.20%)'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <ToggleRow
-                    label="대주주 (종목 10억↑ 또는 지분 1%↑)"
-                    value={capInputs.isMajorShareholder}
-                    onChange={v => setCapInputs(p => ({ ...p, isMajorShareholder: v }))}
-                    noBorder
-                  />
-                </>
-              )}
-            </SectionCard>
-
-            {/* 입력 */}
-            <SectionCard title={`입력 (세전 기준)`}>
-              <InputRow
-                label="양도차익 (매도가 − 매수가 − 거래비용)"
-                value={formatWon(capInputs.gain)}
-                onTap={() => setEditingField('capitalGain')}
-              />
-              {capInputs.isDomestic && (
-                <InputRow
-                  label="매도금액 (증권거래세 계산용)"
-                  value={formatWon(capInputs.salePrice)}
-                  onTap={() => setEditingField('salePrice')}
-                  noBorder
-                />
-              )}
-              {!capInputs.isDomestic && (
-                <InputRow
-                  label="매도금액 (증권거래세 없음)"
-                  value={formatWon(capInputs.salePrice)}
-                  onTap={() => setEditingField('salePrice')}
-                  noBorder
-                />
-              )}
-            </SectionCard>
-
-            {/* 결과 */}
-            {capResult.isTaxExempt ? (
-              <SectionCard title="세금 내역">
-                <div style={{ padding: '16px', background: T.accentSoft, margin: '0' }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: T.accent, marginBottom: 4 }}>매매차익 비과세 ✓</div>
-                  <div style={{ fontSize: 13, color: T.accent, fontWeight: 500 }}>소액주주는 국내 주식 양도세가 없어요.</div>
-                </div>
-                {capResult.transactionTax > 0 && (
-                  <>
-                    <ResultRow
-                      label={`증권거래세 (${capInputs.market === 'kospi' ? '0.15%' : '0.20%'}, 매도금액 기준·세전)`}
-                      value={formatWon(capResult.transactionTax)}
-                      color={T.danger}
-                    />
-                    <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
-                    <ResultRow label="실수령 차익" value={formatWon(capResult.net)} color={T.accent} big />
-                  </>
-                )}
-              </SectionCard>
-            ) : (
-              <SectionCard title="세금 내역">
-                {!capInputs.isDomestic && (
-                  <ResultRow label="기본 공제 (연간 250만·세전 차익 기준)" value={`−${formatWon(capResult.deduction)}`} color={T.accent} />
-                )}
-                <ResultRow label="과세표준" value={formatWon(capResult.taxable)} />
-                {capInputs.isDomestic && capInputs.isMajorShareholder ? (
-                  <ResultRow label="양도소득세 (3억↓ 22% / 초과 27.5%) + 지방세" value={formatWon(capResult.tax)} color={T.danger} />
-                ) : (
-                  <ResultRow label="양도소득세 20% + 지방소득세 2%" value={formatWon(capResult.tax)} color={T.danger} />
-                )}
-                {capResult.transactionTax > 0 && (
-                  <ResultRow
-                    label={`증권거래세 (${capInputs.market === 'kospi' ? '0.15%' : '0.20%'})`}
-                    value={formatWon(capResult.transactionTax)}
-                    color={T.danger}
-                  />
-                )}
-                <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
-                <ResultRow label="실수령 차익" value={formatWon(capResult.net)} color={T.accent} big />
-                <ResultRow label="실효세율 (차익 대비)" value={fmtPct(capResult.effectiveRate)} color={T.textSec} />
-              </SectionCard>
-            )}
-
-            <InfoBanner tone="neutral">
-              해외 주식 250만 공제는 연간 손익통산 후 적용돼요 (손실 종목과 합산 가능).<br />
-              신고: 다음 해 5월 종합소득세 신고 시 자진 신고해야 해요.<br />
-              국내 ETF 매매차익은 소액주주 기준 비과세이나, 채권형·레버리지 ETF는 다를 수 있어요.
-            </InfoBanner>
-          </div>
-        )}
-
-        {/* ── 투자 시뮬레이션 ── */}
+        {/* ── 투자 시뮬 탭 ── */}
         {tab === 'simulation' && (
-          <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <SectionCard title="투자 조건">
-              <InputRow label="초기 투자금" value={formatWon(simInputs.principal)} onTap={() => setEditingField('simPrincipal')} />
-              <InputRow label="월 추가 투자" value={formatWon(simInputs.monthlyAdd)} onTap={() => setEditingField('simMonthlyAdd')} />
-              <InputRow label="연간 수익률" value={`${simInputs.annualReturn}%`} onTap={() => setEditingField('simAnnualReturn')} />
-              <InputRow label="배당 수익률" value={`${simInputs.dividendYield}%`} onTap={() => setEditingField('simDividendYield')} />
-              <InputRow label="투자 기간" value={`${simInputs.years}년`} onTap={() => setEditingField('simYears')} />
-              <ToggleRow label="국내 주식" value={simInputs.isDomestic} onChange={v => setSimInputs(p => ({ ...p, isDomestic: v }))} />
-              <ToggleRow label="직장 건강보험" value={simInputs.isHealthInsured} onChange={v => setSimInputs(p => ({ ...p, isHealthInsured: v }))} />
-              <ToggleRow label="피부양자" value={simInputs.isPidayang} onChange={v => setSimInputs(p => ({ ...p, isPidayang: v }))} noBorder />
-            </SectionCard>
-
-            {/* 결과 요약 */}
-            <div style={{ background: T.text, borderRadius: 18, padding: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>
-                {simInputs.years}년 후 세후 평가액
-              </div>
-              <div style={{ fontSize: 32, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>
-                {formatWon(simResult.finalBalance)}
-              </div>
-              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
-                실질 연평균 수익률 {simResult.effectiveAnnualReturn.toFixed(1)}% (세후)
+          <>
+            {/* 모드 세그먼트 컨트롤 */}
+            <div style={{ padding: '12px 20px 4px' }}>
+              <div style={{ display: 'flex', background: T.bgSoft, borderRadius: 10, padding: 3, border: `1px solid ${T.divider}` }}>
+                {([
+                  { id: 'forward' as SimMode, label: '💰 얼마가 될까' },
+                  { id: 'goal' as SimMode, label: '🎯 목표 역산' },
+                ] as { id: SimMode; label: string }[]).map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setSimMode(m.id)}
+                    style={{
+                      flex: 1, padding: '9px 0', borderRadius: 7, border: 0,
+                      background: simMode === m.id ? T.text : 'transparent',
+                      color: simMode === m.id ? '#fff' : T.textSec,
+                      fontSize: 13, fontWeight: simMode === m.id ? 700 : 600,
+                      cursor: 'pointer', letterSpacing: '-0.01em',
+                      transition: 'all .15s',
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <SectionCard title="수익 내역">
-              <ResultRow label="총 투자금" value={formatWon(simResult.totalInvested)} />
-              <ResultRow label="총 배당금 (세전)" value={formatWon(simResult.totalDividendGross)} />
-              <ResultRow label="배당세 후 실수령" value={formatWon(simResult.totalDividendNet)} color={T.accent} />
-              <ResultRow label="양도차익" value={formatWon(simResult.totalCapitalGainGross)} />
-              <ResultRow label="양도소득세" value={formatWon(simResult.capitalGainTax)} color={T.danger} />
-              <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
-              <ResultRow label="세후 총 수익" value={formatWon(simResult.totalReturn)} color={T.accent} big />
-            </SectionCard>
+            {/* 투자 시뮬 (얼마가 될까) */}
+            {simMode === 'forward' && (
+              <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <SectionCard title="투자 조건">
+                  <InputRow label="초기 투자금" value={formatWon(simInputs.principal)} onTap={() => setEditingField('simPrincipal')} />
+                  <InputRow label="월 추가 투자" value={formatWon(simInputs.monthlyAdd)} onTap={() => setEditingField('simMonthlyAdd')} />
+                  <InputRow label="연간 수익률" value={`${simInputs.annualReturn}%`} onTap={() => setEditingField('simAnnualReturn')} />
+                  <InputRow label="배당 수익률" value={`${simInputs.dividendYield}%`} onTap={() => setEditingField('simDividendYield')} />
+                  <InputRow label="투자 기간" value={`${simInputs.years}년`} onTap={() => setEditingField('simYears')} />
+                  <ToggleRow label="국내 주식" value={simInputs.isDomestic} onChange={v => setSimInputs(p => ({ ...p, isDomestic: v }))} />
+                  <ToggleRow label="직장 건강보험" value={simInputs.isHealthInsured} onChange={v => setSimInputs(p => ({ ...p, isHealthInsured: v }))} />
+                  <ToggleRow label="피부양자" value={simInputs.isPidayang} onChange={v => setSimInputs(p => ({ ...p, isPidayang: v }))} noBorder />
+                </SectionCard>
 
-            <InfoBanner tone="neutral">
-              배당은 매월 재투자하는 것으로 계산해요. 실제 세금은 소득 상황에 따라 달라질 수 있어요.
-            </InfoBanner>
-          </div>
+                <div style={{ background: T.text, borderRadius: 18, padding: 20 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>
+                    {simInputs.years}년 후 세후 평가액
+                  </div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>
+                    {formatWon(simResult.finalBalance)}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+                    실질 연평균 수익률 {simResult.effectiveAnnualReturn.toFixed(1)}% (세후)
+                  </div>
+                </div>
+
+                <SectionCard title="수익 내역">
+                  <ResultRow label="총 투자금" value={formatWon(simResult.totalInvested)} />
+                  <ResultRow label="총 배당금 (세전)" value={formatWon(simResult.totalDividendGross)} />
+                  <ResultRow label="배당세 후 실수령" value={formatWon(simResult.totalDividendNet)} color={T.accent} />
+                  <ResultRow label="양도차익" value={formatWon(simResult.totalCapitalGainGross)} />
+                  <ResultRow label="양도소득세" value={formatWon(simResult.capitalGainTax)} color={T.danger} />
+                  <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                  <ResultRow label="세후 총 수익" value={formatWon(simResult.totalReturn)} color={T.accent} big />
+                </SectionCard>
+
+                {/* 목표 역산으로 유도 */}
+                <button
+                  onClick={() => setSimMode('goal')}
+                  style={{
+                    border: `1px solid ${T.divider}`, background: T.bg, borderRadius: 14, padding: '14px 16px',
+                    cursor: 'pointer', width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: T.text, letterSpacing: '-0.01em', marginBottom: 2 }}>
+                      🎯 목표 역산으로 확인
+                    </div>
+                    <div style={{ fontSize: 12, color: T.textSec, fontWeight: 500 }}>
+                      목표 달성을 위해 필요한 수익률 계산
+                    </div>
+                  </div>
+                  <svg width="6" height="10" viewBox="0 0 6 10" fill="none">
+                    <path d="M1 1l4 4-4 4" stroke={T.textTer} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+
+                <InfoBanner tone="neutral">
+                  배당은 매월 재투자하는 것으로 계산해요. 실제 세금은 소득 상황에 따라 달라질 수 있어요.
+                </InfoBanner>
+              </div>
+            )}
+
+            {/* 목표 역산 */}
+            {simMode === 'goal' && (
+              <GoalReverseSection
+                laborIncome={laborIncome}
+                onSwitchToSim={() => setSimMode('forward')}
+              />
+            )}
+          </>
         )}
 
-        {/* ── 목표 역산 ── */}
-        {tab === 'goal' && (
-          <GoalReverseTab laborIncome={laborIncome} onSwitchTab={setTab} />
+        {/* ── 세금 계산 탭 ── */}
+        {tab === 'tax' && (
+          <>
+            {/* 세금 종류 세그먼트 컨트롤 */}
+            <div style={{ padding: '12px 20px 4px' }}>
+              <div style={{ display: 'flex', background: T.bgSoft, borderRadius: 10, padding: 3, border: `1px solid ${T.divider}` }}>
+                {([
+                  { id: 'dividend' as TaxType, label: '배당세' },
+                  { id: 'capital' as TaxType, label: '양도소득세' },
+                ] as { id: TaxType; label: string }[]).map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setTaxType(m.id)}
+                    style={{
+                      flex: 1, padding: '9px 0', borderRadius: 7, border: 0,
+                      background: taxType === m.id ? T.text : 'transparent',
+                      color: taxType === m.id ? '#fff' : T.textSec,
+                      fontSize: 13, fontWeight: taxType === m.id ? 700 : 600,
+                      cursor: 'pointer', letterSpacing: '-0.01em',
+                      transition: 'all .15s',
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 배당세 */}
+            {taxType === 'dividend' && (
+              <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <SectionCard title="입력">
+                  <InputRow label="연간 배당금 (세전)" value={formatWon(divInputs.grossDividend)} onTap={() => setEditingField('grossDividend')} />
+                  <InputRow label="기타 금융소득 (이자 등)" value={formatWon(divInputs.otherFinancialIncome)} onTap={() => setEditingField('otherFinancialIncome')} />
+                  <ToggleRow label="국내 주식" value={divInputs.isDomestic} onChange={v => setDivInputs(p => ({ ...p, isDomestic: v }))} />
+                  <ToggleRow label="직장 건강보험 가입" value={divInputs.isHealthInsured} onChange={v => setDivInputs(p => ({ ...p, isHealthInsured: v }))} />
+                  <ToggleRow label="피부양자" value={divInputs.isPidayang} onChange={v => setDivInputs(p => ({ ...p, isPidayang: v }))} noBorder />
+                </SectionCard>
+
+                <SectionCard title="세금 내역">
+                  <ResultRow label={`원천징수 (${divInputs.isDomestic ? '15.4%' : '15%'})`} value={formatWon(divResult.withheld)} color={T.danger} />
+                  {divResult.isComprehensive && (
+                    <ResultRow label="종합소득세 추가납부" value={formatWon(divResult.comprehensiveTax)} color={T.danger} />
+                  )}
+                  {divResult.isComprehensive && divResult.localTax > 0 && (
+                    <ResultRow label="지방소득세" value={formatWon(divResult.localTax)} color={T.danger} />
+                  )}
+                  {divResult.healthIns > 0 && (
+                    <ResultRow label={divResult.losePidayang ? '건보료 (피부양자 탈락)' : '건보료 추가분'} value={formatWon(divResult.healthIns)} color={T.warn} />
+                  )}
+                  <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                  <ResultRow label="실수령 배당금" value={formatWon(divResult.netDividend)} color={T.accent} big />
+                  <ResultRow label="실효세율" value={fmtPct(divResult.effectiveRate)} color={T.textSec} />
+                </SectionCard>
+
+                {divResult.isComprehensive && (
+                  <InfoBanner tone="warn">
+                    금융소득이 연 2천만원을 초과해 종합과세 대상이에요. 다음 해 5월에 종합소득세를 신고해야 합니다.
+                  </InfoBanner>
+                )}
+                {divResult.losePidayang && (
+                  <InfoBanner tone="danger">
+                    금융소득이 연 1천만원을 초과해 건강보험 피부양자 자격을 잃을 수 있어요.
+                  </InfoBanner>
+                )}
+                <InfoBanner tone="neutral">
+                  종합과세 여부는 금융소득(배당+이자) 합계가 연 2천만원을 초과하는지로 판단해요.
+                  상단 <b>세전 소득</b> 버튼에서 근로소득을 입력하면 종합과세 계산이 정확해져요.
+                </InfoBanner>
+              </div>
+            )}
+
+            {/* 양도소득세 */}
+            {taxType === 'capital' && (
+              <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <InfoBanner tone="neutral">
+                  💡 세금 계산 기준은 모두 <b>세전(gross)</b>이에요.<br />
+                  양도세 = 세전 양도차익(매도가 − 매수가 − 거래비용)에 부과
+                </InfoBanner>
+
+                <SectionCard title="주식 종류">
+                  <ToggleRow
+                    label="국내 주식 (코스피·코스닥·ETF)"
+                    value={capInputs.isDomestic}
+                    onChange={v => setCapInputs(p => ({ ...p, isDomestic: v, market: v ? 'kospi' : 'overseas' }))}
+                  />
+                  {capInputs.isDomestic && (
+                    <>
+                      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.divider}` }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec, marginBottom: 8 }}>시장 선택</div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          {(['kospi', 'kosdaq'] as const).map(m => (
+                            <button
+                              key={m}
+                              onClick={() => setCapInputs(p => ({ ...p, market: m }))}
+                              style={{
+                                flex: 1, padding: '8px 0', borderRadius: 10, border: 0, cursor: 'pointer',
+                                background: capInputs.market === m ? T.text : T.bgMuted,
+                                color: capInputs.market === m ? '#fff' : T.textSec,
+                                fontSize: 13, fontWeight: 600,
+                              }}
+                            >
+                              {m === 'kospi' ? '코스피 (0.15%)' : '코스닥 (0.20%)'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <ToggleRow
+                        label="대주주 (종목 10억↑ 또는 지분 1%↑)"
+                        value={capInputs.isMajorShareholder}
+                        onChange={v => setCapInputs(p => ({ ...p, isMajorShareholder: v }))}
+                        noBorder
+                      />
+                    </>
+                  )}
+                </SectionCard>
+
+                <SectionCard title="입력 (세전 기준)">
+                  <InputRow
+                    label="양도차익 (매도가 − 매수가 − 거래비용)"
+                    value={formatWon(capInputs.gain)}
+                    onTap={() => setEditingField('capitalGain')}
+                  />
+                  <InputRow
+                    label={capInputs.isDomestic ? '매도금액 (증권거래세 계산용)' : '매도금액 (증권거래세 없음)'}
+                    value={formatWon(capInputs.salePrice)}
+                    onTap={() => setEditingField('salePrice')}
+                    noBorder
+                  />
+                </SectionCard>
+
+                {capResult.isTaxExempt ? (
+                  <SectionCard title="세금 내역">
+                    <div style={{ padding: 16, background: T.accentSoft }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: T.accent, marginBottom: 4 }}>매매차익 비과세 ✓</div>
+                      <div style={{ fontSize: 13, color: T.accent, fontWeight: 500 }}>소액주주는 국내 주식 양도세가 없어요.</div>
+                    </div>
+                    {capResult.transactionTax > 0 && (
+                      <>
+                        <ResultRow
+                          label={`증권거래세 (${capInputs.market === 'kospi' ? '0.15%' : '0.20%'}, 매도금액 기준)`}
+                          value={formatWon(capResult.transactionTax)}
+                          color={T.danger}
+                        />
+                        <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                        <ResultRow label="실수령 차익" value={formatWon(capResult.net)} color={T.accent} big />
+                      </>
+                    )}
+                  </SectionCard>
+                ) : (
+                  <SectionCard title="세금 내역">
+                    {!capInputs.isDomestic && (
+                      <ResultRow label="기본 공제 (연간 250만)" value={`−${formatWon(capResult.deduction)}`} color={T.accent} />
+                    )}
+                    <ResultRow label="과세표준" value={formatWon(capResult.taxable)} />
+                    {capInputs.isDomestic && capInputs.isMajorShareholder ? (
+                      <ResultRow label="양도소득세 (3억↓ 22% / 초과 27.5%) + 지방세" value={formatWon(capResult.tax)} color={T.danger} />
+                    ) : (
+                      <ResultRow label="양도소득세 20% + 지방소득세 2%" value={formatWon(capResult.tax)} color={T.danger} />
+                    )}
+                    {capResult.transactionTax > 0 && (
+                      <ResultRow label={`증권거래세 (${capInputs.market === 'kospi' ? '0.15%' : '0.20%'})`} value={formatWon(capResult.transactionTax)} color={T.danger} />
+                    )}
+                    <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                    <ResultRow label="실수령 차익" value={formatWon(capResult.net)} color={T.accent} big />
+                    <ResultRow label="실효세율 (차익 대비)" value={fmtPct(capResult.effectiveRate)} color={T.textSec} />
+                  </SectionCard>
+                )}
+
+                <InfoBanner tone="neutral">
+                  해외 주식 250만 공제는 연간 손익통산 후 적용돼요.<br />
+                  신고: 다음 해 5월 종합소득세 신고 시 자진 신고해야 해요.
+                </InfoBanner>
+              </div>
+            )}
+          </>
         )}
 
         <div style={{ height: 20 }} />
@@ -708,13 +716,8 @@ export default function InvestPage() {
         const f = fieldDefs[editingField];
         return (
           <NumberEditSheet
-            title={f.label}
-            value={f.value}
-            unit={f.unit}
-            step={f.step}
-            min={f.min}
-            max={f.max}
-            presets={f.presets}
+            title={f.label} value={f.value} unit={f.unit} step={f.step}
+            min={f.min} max={f.max} presets={f.presets}
             onClose={() => setEditingField(null)}
             onSave={(v) => { f.set(v); setEditingField(null); }}
           />
@@ -882,9 +885,9 @@ function NumberEditSheet({ title, value, onClose, onSave, unit = '원', min = 0,
   );
 }
 
-// ─── 목표 역산 탭 ─────────────────────────────────────────────────────────────
+// ─── 목표 역산 섹션 ─────────────────────────────────────────────────────────
 
-function GoalReverseTab({ laborIncome, onSwitchTab }: { laborIncome: number; onSwitchTab: (t: Tab) => void }) {
+function GoalReverseSection({ laborIncome, onSwitchToSim }: { laborIncome: number; onSwitchToSim: () => void }) {
   const router = useRouter();
   const { settings, loading: goalLoading } = useGoalSettings();
   const { budget, loading: budgetLoading } = useBudget();
@@ -923,19 +926,13 @@ function GoalReverseTab({ laborIncome, onSwitchTab }: { laborIncome: number; onS
   const rateColor = requiredAnnualRate > 25 ? '#F87171' : requiredAnnualRate > 12 ? '#FCD34D' : '#34D399';
 
   return (
-    <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* 목표 요약 */}
-      <SectionCard title="목표 탭 데이터">
+    <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <SectionCard title="현재 목표 데이터">
         <ResultRow label="목표 금액" value={formatWon(targetAmount)} />
         <ResultRow label="현재 보유 자산" value={formatWon(currentAssets)} />
-        <ResultRow label="남은 금액 (Gap)" value={formatWon(gap)} color={T.text} />
+        <ResultRow label="남은 금액 (Gap)" value={formatWon(gap)} />
         <ResultRow label="목표 기간" value={`${targetMonths}개월 (${(targetMonths / 12).toFixed(1)}년)`} />
-        <ResultRow
-          label="월 저축 가능액"
-          value={formatWon(monthlySavings)}
-          color={monthlySavings > 0 ? T.accent : T.danger}
-          big
-        />
+        <ResultRow label="월 저축 가능액" value={formatWon(monthlySavings)} color={monthlySavings > 0 ? T.accent : T.danger} big />
         <div style={{ padding: '8px 16px 12px' }}>
           <button
             onClick={() => router.push('/goals')}
@@ -946,14 +943,13 @@ function GoalReverseTab({ laborIncome, onSwitchTab }: { laborIncome: number; onS
         </div>
       </SectionCard>
 
-      {/* 필요 수익률 */}
       {isAchievableWithSavingsOnly ? (
         <div style={{ background: T.accentSoft, borderRadius: 16, padding: 20 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.accent, marginBottom: 6 }}>
             저축만으로 달성 가능해요!
           </div>
           <div style={{ fontSize: 14, color: T.accent, fontWeight: 600, lineHeight: 1.6 }}>
-            현재 월 저축액({formatWon(monthlySavings)})으로 투자 수익 없이도 목표 기간 내 달성 가능해요.<br />
+            현재 월 저축액({formatWon(monthlySavings)})으로 목표 기간 내 달성 가능해요.<br />
             투자까지 더하면 더 빠르게 달성하거나 목표를 높일 수 있어요.
           </div>
         </div>
@@ -962,11 +958,7 @@ function GoalReverseTab({ laborIncome, onSwitchTab }: { laborIncome: number; onS
           <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>
             목표 달성을 위한 필요 연 수익률 (세전)
           </div>
-          <div style={{
-            fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em',
-            fontVariantNumeric: 'tabular-nums', marginBottom: 4,
-            color: rateColor,
-          }}>
+          <div style={{ fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 4, color: rateColor }}>
             {requiredAnnualRate.toFixed(1)}%
           </div>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
@@ -975,13 +967,12 @@ function GoalReverseTab({ laborIncome, onSwitchTab }: { laborIncome: number; onS
           {requiredAnnualRate > 25 && (
             <div style={{ marginTop: 12, padding: '10px 12px', background: 'rgba(248,113,113,0.15)', borderRadius: 10, fontSize: 12, color: '#FCA5A5', fontWeight: 600, lineHeight: 1.6 }}>
               ⚠️ 연 25% 초과는 현실적으로 달성하기 매우 어려운 수익률이에요.<br />
-              목표 금액을 낮추거나 기간을 늘리는 것을 고려해보세요.
+              목표 금액을 낮추거나 기간을 늘려보세요.
             </div>
           )}
         </div>
       )}
 
-      {/* 벤치마크 비교 */}
       {!isAchievableWithSavingsOnly && (
         <SectionCard title="벤치마크 비교">
           {benchmarks.map((b, i) => {
@@ -995,15 +986,13 @@ function GoalReverseTab({ laborIncome, onSwitchTab }: { laborIncome: number; onS
                 background: isEnough ? T.accentSoft : 'transparent',
               }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text, letterSpacing: '-0.01em' }}>{b.name}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{b.name}</div>
                   <div style={{ fontSize: 11, color: T.textTer, marginTop: 2 }}>리스크 {b.risk}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 17, fontWeight: 700, color: b.color, fontVariantNumeric: 'tabular-nums' }}>
-                    연 {b.annualRate}%
-                  </div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: b.color, fontVariantNumeric: 'tabular-nums' }}>연 {b.annualRate}%</div>
                   <div style={{ fontSize: 11, fontWeight: 700, marginTop: 2, color: isEnough ? T.accent : T.danger }}>
-                    {isEnough ? '✓ 목표 달성 가능' : '✗ 부족'}
+                    {isEnough ? '✓ 달성 가능' : '✗ 부족'}
                   </div>
                 </div>
               </div>
@@ -1012,17 +1001,17 @@ function GoalReverseTab({ laborIncome, onSwitchTab }: { laborIncome: number; onS
         </SectionCard>
       )}
 
-      {/* 투자 시뮬레이션 연결 */}
+      {/* 시뮬레이션으로 연결 */}
       <button
-        onClick={() => onSwitchTab('simulation')}
+        onClick={onSwitchToSim}
         style={{
           border: `1px solid ${T.divider}`, background: T.bg, borderRadius: 14, padding: '14px 16px',
           cursor: 'pointer', width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}
       >
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, letterSpacing: '-0.01em', marginBottom: 2 }}>
-            투자 시뮬레이션으로 확인
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 2 }}>
+            💰 투자 시뮬레이션으로 확인
           </div>
           <div style={{ fontSize: 12, color: T.textSec, fontWeight: 500 }}>
             수익률 입력 시 세후 예상 수익액 계산
@@ -1034,7 +1023,7 @@ function GoalReverseTab({ laborIncome, onSwitchTab }: { laborIncome: number; onS
       </button>
 
       <InfoBanner tone="neutral">
-        위 수익률은 세전(gross) 기준이에요. 실제 투자 시 배당세(국내 15.4% / 해외 15%), 해외 주식 양도세(22%)가 추가로 부과돼요.<br />
+        위 수익률은 세전(gross) 기준이에요. 실제 투자 시 배당세·양도세가 추가로 부과돼요.<br />
         과거 수익률이 미래를 보장하지 않으며, 원금 손실이 발생할 수 있어요.
       </InfoBanner>
     </div>
@@ -1047,7 +1036,6 @@ function SalarySheet({ annualSalary, onClose, onSave }: {
   onSave: (annualSalary: number, bonusIncome: number, useCustom: boolean) => void;
 }) {
   const [total, setTotal] = useState(annualSalary);
-
   const fmtInput = (n: number) => n === 0 ? '' : Math.floor(n).toLocaleString('ko-KR');
   const parseInput = (s: string) => Math.max(0, Number(s.replace(/[^\d]/g, '')) || 0);
 
@@ -1057,7 +1045,6 @@ function SalarySheet({ annualSalary, onClose, onSave }: {
         <InfoBanner tone="neutral">
           원천징수영수증의 <b>총급여</b> 금액을 입력해주세요. 성과금 포함 연간 세전 총소득이에요.
         </InfoBanner>
-
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: T.textTer }}>세전 연간 총소득 (성과금 포함)</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.bgMuted, borderRadius: 12, padding: '14px 16px' }}>
@@ -1067,11 +1054,7 @@ function SalarySheet({ annualSalary, onClose, onSave }: {
               value={fmtInput(total)}
               placeholder="예: 52,000,000"
               onChange={e => setTotal(parseInput(e.target.value))}
-              style={{
-                flex: 1, border: 0, background: 'transparent', outline: 'none',
-                fontSize: 18, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums',
-                fontFamily: 'Pretendard, system-ui, sans-serif',
-              }}
+              style={{ flex: 1, border: 0, background: 'transparent', outline: 'none', fontSize: 18, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums', fontFamily: 'Pretendard, system-ui, sans-serif' }}
             />
           </div>
           {total >= 10_000 && (
@@ -1082,7 +1065,6 @@ function SalarySheet({ annualSalary, onClose, onSave }: {
             </div>
           )}
         </div>
-
         <PrimaryButton onClick={() => onSave(total, 0, true)}>적용</PrimaryButton>
       </div>
     </BottomSheet>

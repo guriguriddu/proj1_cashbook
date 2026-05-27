@@ -17,7 +17,7 @@ import { getCurrentMonth, getReceiptImageUrl } from '@/lib/supabase-storage';
 import { useExpensesByMonth, useBudget } from '@/hooks/useSupabaseData';
 import * as storage from '@/lib/supabase-storage';
 import { DEFAULT_CATEGORIES, getCategoryById } from '@/constants/categories';
-import type { Expense } from '@/types';
+import type { Expense, BudgetScope } from '@/types';
 
 function formatWon(amount: number): string {
   return '₩' + Math.abs(Math.round(amount)).toLocaleString('ko-KR');
@@ -108,6 +108,7 @@ function ExpensesContent() {
   const [monthSheetOpen, setMonthSheetOpen] = useState(false);
   const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [budgetEditCat, setBudgetEditCat] = useState<string | null>(null);
 
   // For non-monthly periods: fetch by date range
   const [rangeExpenses, setRangeExpenses] = useState<Expense[]>([]);
@@ -118,7 +119,7 @@ function ExpensesContent() {
 
   const { expenses: monthExpenses, loading: monthLoading, refresh: refreshExpenses } =
     useExpensesByMonth(monthKey);
-  const { budget, loading: budgetLoading } = useBudget();
+  const { budget, loading: budgetLoading, refresh: refreshBudget } = useBudget();
 
   // Fetch range when period is not month
   useEffect(() => {
@@ -217,27 +218,7 @@ function ExpensesContent() {
 
   return (
     <Screen>
-      <AppHeader
-        title="내역"
-        onBack={() => router.push('/')}
-        rightSlot={
-          <button
-            onClick={() => setSort(sort === 'date' ? 'amount' : 'date')}
-            style={{
-              width: 'auto', padding: '0 12px', height: 36, background: T.bgMuted,
-              borderRadius: 18, fontSize: 12, fontWeight: 600, color: T.textSec,
-              whiteSpace: 'nowrap', flexShrink: 0, border: 0, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 4,
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M3 4l3-3 3 3M3 8l3 3 3-3" stroke={T.textSec} strokeWidth="1.5"
-                strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            </svg>
-            {sort === 'date' ? '날짜순' : '금액순'}
-          </button>
-        }
-      />
+      <AppHeader title="내역" onBack={() => router.push('/')} />
 
       {/* Period tabs */}
       <div style={{ padding: '8px 20px 0' }}>
@@ -290,7 +271,7 @@ function ExpensesContent() {
             <MoneyText value={filteredTotal} size={28} weight={800} />
 
             {filterCat === 'all' && (() => {
-              const totalBudget = Object.values(budget.categoryBudgets).reduce((a, v) => a + v, 0);
+              const totalBudget = DEFAULT_CATEGORIES.reduce((a, c) => a + storage.getCategoryBudgetForMonth(budget, monthKey, c.id), 0);
               const totalPct = totalBudget > 0 ? (filteredTotal / totalBudget) * 100 : 0;
               return (
                 <div style={{ marginTop: 14 }}>
@@ -308,9 +289,17 @@ function ExpensesContent() {
             {catData && (
               <div style={{ marginTop: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, fontWeight: 500, color: T.textSec, marginBottom: 6 }}>
-                  <span>
-                    <span style={{ color: catData.color, fontWeight: 700 }}>{catData.name}</span> 예산 사용률
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>
+                      <span style={{ color: catData.color, fontWeight: 700 }}>{catData.name}</span> 예산 사용률
+                    </span>
+                    <button
+                      onClick={() => setBudgetEditCat(catData.id)}
+                      style={{ border: 0, background: 'transparent', padding: '2px 6px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: T.accent, letterSpacing: '-0.01em' }}
+                    >
+                      수정
+                    </button>
+                  </div>
                   <span style={{ color: catPct > 100 ? T.danger : T.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                     {catBudget > 0 ? `${catPct.toFixed(0)}% / ${catBudget.toLocaleString()}원` : '예산 미설정'}
                   </span>
@@ -320,27 +309,43 @@ function ExpensesContent() {
             )}
           </div>
 
-          {/* Category chips */}
-          <div style={{ padding: '4px 16px 12px', display: 'flex', gap: 6, overflowX: 'auto', whiteSpace: 'nowrap', borderBottom: `1px solid ${T.divider}` }}>
-            {chips.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setFilterCat(c.id)}
-                style={{
-                  border: 0, padding: '8px 14px', borderRadius: 999,
-                  background: filterCat === c.id ? T.text : T.bgMuted,
-                  color: filterCat === c.id ? '#fff' : T.textSec,
-                  fontFamily: 'Pretendard, system-ui, sans-serif',
-                  fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em',
-                  cursor: 'pointer', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5,
-                }}
-              >
-                {c.id !== 'all' && (
-                  <span style={{ width: 6, height: 6, borderRadius: 3, background: c.color, opacity: filterCat === c.id ? 0.9 : 0.7 }} />
-                )}
-                {c.name}
-              </button>
-            ))}
+          {/* Category chips + sort */}
+          <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.divider}` }}>
+            <div style={{ flex: 1, padding: '4px 0 12px 16px', display: 'flex', gap: 6, overflowX: 'auto', whiteSpace: 'nowrap' }}>
+              {chips.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setFilterCat(c.id)}
+                  style={{
+                    border: 0, padding: '8px 14px', borderRadius: 999,
+                    background: filterCat === c.id ? T.text : T.bgMuted,
+                    color: filterCat === c.id ? '#fff' : T.textSec,
+                    fontFamily: 'Pretendard, system-ui, sans-serif',
+                    fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em',
+                    cursor: 'pointer', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5,
+                  }}
+                >
+                  {c.id !== 'all' && (
+                    <span style={{ width: 6, height: 6, borderRadius: 3, background: c.color, opacity: filterCat === c.id ? 0.9 : 0.7 }} />
+                  )}
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setSort(sort === 'date' ? 'amount' : 'date')}
+              style={{
+                flexShrink: 0, margin: '0 16px 12px 8px', padding: '6px 10px', height: 32,
+                background: T.bgMuted, borderRadius: 999, fontSize: 11, fontWeight: 600,
+                color: T.textSec, border: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12">
+                <path d="M3 4l3-3 3 3M3 8l3 3 3-3" stroke={T.textSec} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
+              {sort === 'date' ? '날짜순' : '금액순'}
+            </button>
           </div>
 
           <ScreenBody>
@@ -415,27 +420,43 @@ function ExpensesContent() {
             })()}
           </div>
 
-          {/* Category chips */}
-          <div style={{ padding: '4px 16px 12px', display: 'flex', gap: 6, overflowX: 'auto', whiteSpace: 'nowrap', borderBottom: `1px solid ${T.divider}` }}>
-            {rangeChips.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setFilterCat(c.id)}
-                style={{
-                  border: 0, padding: '8px 14px', borderRadius: 999,
-                  background: filterCat === c.id ? T.text : T.bgMuted,
-                  color: filterCat === c.id ? '#fff' : T.textSec,
-                  fontFamily: 'Pretendard, system-ui, sans-serif',
-                  fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em',
-                  cursor: 'pointer', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5,
-                }}
-              >
-                {c.id !== 'all' && (
-                  <span style={{ width: 6, height: 6, borderRadius: 3, background: c.color, opacity: filterCat === c.id ? 0.9 : 0.7 }} />
-                )}
-                {c.name}
-              </button>
-            ))}
+          {/* Category chips + sort */}
+          <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.divider}` }}>
+            <div style={{ flex: 1, padding: '4px 0 12px 16px', display: 'flex', gap: 6, overflowX: 'auto', whiteSpace: 'nowrap' }}>
+              {rangeChips.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setFilterCat(c.id)}
+                  style={{
+                    border: 0, padding: '8px 14px', borderRadius: 999,
+                    background: filterCat === c.id ? T.text : T.bgMuted,
+                    color: filterCat === c.id ? '#fff' : T.textSec,
+                    fontFamily: 'Pretendard, system-ui, sans-serif',
+                    fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em',
+                    cursor: 'pointer', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5,
+                  }}
+                >
+                  {c.id !== 'all' && (
+                    <span style={{ width: 6, height: 6, borderRadius: 3, background: c.color, opacity: filterCat === c.id ? 0.9 : 0.7 }} />
+                  )}
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setSort(sort === 'date' ? 'amount' : 'date')}
+              style={{
+                flexShrink: 0, margin: '0 16px 12px 8px', padding: '6px 10px', height: 32,
+                background: T.bgMuted, borderRadius: 999, fontSize: 11, fontWeight: 600,
+                color: T.textSec, border: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12">
+                <path d="M3 4l3-3 3 3M3 8l3 3 3-3" stroke={T.textSec} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
+              {sort === 'date' ? '날짜순' : '금액순'}
+            </button>
           </div>
 
           <ScreenBody>
@@ -504,6 +525,24 @@ function ExpensesContent() {
           onClose={() => setEditingExpense(null)}
         />
       )}
+
+      {budgetEditCat && (() => {
+        const cat = DEFAULT_CATEGORIES.find((c) => c.id === budgetEditCat)!;
+        const currentAmt = storage.getCategoryBudgetForMonth(budget, monthKey, budgetEditCat);
+        return (
+          <QuickBudgetSheet
+            cat={cat}
+            value={currentAmt}
+            month={monthKey}
+            onClose={() => setBudgetEditCat(null)}
+            onSave={async (v, scope) => {
+              await storage.saveCategoryBudgetScope(budgetEditCat, v, monthKey, scope);
+              await refreshBudget();
+              setBudgetEditCat(null);
+            }}
+          />
+        );
+      })()}
     </Screen>
   );
 }
@@ -655,6 +694,94 @@ function MonthPickerSheet({ current, onPick, onClose }: { current: string; onPic
             </button>
           );
         })}
+      </div>
+    </BottomSheet>
+  );
+}
+
+function QuickBudgetSheet({ cat, value, month, onClose, onSave }: {
+  cat: { id: string; name: string; color: string };
+  value: number;
+  month: string;
+  onClose: () => void;
+  onSave: (v: number, scope: BudgetScope) => void;
+}) {
+  const [v, setV] = useState(value);
+  const [scope, setScope] = useState<BudgetScope>('this_month');
+  const presets = [10, 20, 30, 50, 100];
+  const adjust = (delta: number) => setV(Math.max(0, v + delta));
+  const formatted = v.toLocaleString('ko-KR');
+  const [y, mo] = month.split('-');
+  const monthLabel = `${y}년 ${parseInt(mo)}월`;
+
+  return (
+    <BottomSheet open onClose={onClose} title={`${cat.name} 예산 수정`} height="70%">
+      <div style={{ padding: '0 20px 24px' }}>
+        <div style={{ padding: '20px 0', textAlign: 'center', borderBottom: `1px solid ${T.divider}` }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 4 }}>
+            <span style={{ fontSize: 20, fontWeight: 700, color: T.textSec }}>₩</span>
+            <input
+              type="text" inputMode="numeric" value={formatted}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/[^\d]/g, '');
+                setV(Math.max(0, Math.floor(Number(digits) || 0)));
+              }}
+              style={{
+                border: 0, background: 'transparent', textAlign: 'center',
+                fontFamily: 'Pretendard, system-ui, sans-serif', fontSize: 30, fontWeight: 800,
+                color: T.text, letterSpacing: '-0.02em', width: `${formatted.length}ch`,
+                minWidth: 80, maxWidth: 240, outline: 'none', padding: 0,
+              }}
+            />
+            <span style={{ fontSize: 18, fontWeight: 700, color: T.textSec }}>원</span>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 13, color: T.textTer, fontWeight: 500 }}>
+            {v >= 10000 ? Math.floor(v / 10000) + '만원' : v.toLocaleString() + '원'} / 월
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, padding: '16px 0 8px', justifyContent: 'space-between' }}>
+          {[-50000, -10000, +10000, +50000].map((d) => (
+            <button key={d} onClick={() => adjust(d)}
+              style={{ flex: 1, padding: '10px 0', border: 0, borderRadius: 10, background: T.bgMuted, color: T.text, fontFamily: 'Pretendard, system-ui, sans-serif', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              {d > 0 ? '+' : '−'}{Math.abs(d) / 10000}만
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingBottom: 16, borderBottom: `1px solid ${T.divider}` }}>
+          {presets.map((p) => (
+            <button key={p} onClick={() => setV(p * 10000)}
+              style={{ border: 0, padding: '8px 14px', borderRadius: 999, background: v === p * 10000 ? cat.color + '18' : T.bgSoft, color: v === p * 10000 ? cat.color : T.text, fontFamily: 'Pretendard, system-ui, sans-serif', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              {p}만원
+            </button>
+          ))}
+        </div>
+
+        <div style={{ paddingTop: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, marginBottom: 10 }}>적용 범위</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {([
+              { value: 'this_month' as BudgetScope, label: '이번 달만', sub: monthLabel },
+              { value: 'this_and_forward' as BudgetScope, label: '이번 달부터 모두', sub: `${monthLabel} 이후 기본 예산으로 적용` },
+            ]).map((opt) => (
+              <button key={opt.value} onClick={() => setScope(opt.value)}
+                style={{ width: '100%', border: `2px solid ${scope === opt.value ? T.accent : T.divider}`, borderRadius: 12, padding: '12px 14px', background: scope === opt.value ? T.accentSoft : T.bg, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12, fontFamily: 'Pretendard, system-ui, sans-serif' }}>
+                <div style={{ width: 18, height: 18, borderRadius: 9, flexShrink: 0, border: `2px solid ${scope === opt.value ? T.accent : T.divider}`, background: scope === opt.value ? T.accent : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {scope === opt.value && <div style={{ width: 6, height: 6, borderRadius: 3, background: '#fff' }} />}
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{opt.label}</div>
+                  <div style={{ fontSize: 11, color: T.textSec, marginTop: 2 }}>{opt.sub}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <PrimaryButton onClick={() => onSave(v, scope)}>적용</PrimaryButton>
+        </div>
       </div>
     </BottomSheet>
   );

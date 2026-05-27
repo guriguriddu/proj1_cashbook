@@ -872,10 +872,7 @@ export async function getCategoryTotal(
 
 export async function getMonthlySummary(month: string) {
   const budget = await getBudget();
-  const monthlyBudget = budget.monthlyBudgets[month] || 0;
   const totalSpent = await getMonthlyTotal(month);
-  const remaining = monthlyBudget - totalSpent;
-  const usageRate = monthlyBudget > 0 ? (totalSpent / monthlyBudget) * 100 : 0;
 
   const categoryBreakdown: {
     [key: string]: {
@@ -898,9 +895,14 @@ export async function getMonthlySummary(month: string) {
     };
   }
 
+  // 카테고리 예산 합계를 월 총예산으로 사용
+  const totalBudget = Object.values(categoryBreakdown).reduce((sum, c) => sum + c.budget, 0);
+  const remaining = totalBudget - totalSpent;
+  const usageRate = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+
   return {
     month,
-    totalBudget: monthlyBudget,
+    totalBudget,
     totalSpent,
     remaining,
     usageRate,

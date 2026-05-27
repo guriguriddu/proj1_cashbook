@@ -131,18 +131,21 @@ export interface Database {
           budget_id: string;
           category_id: string;
           amount: number;
+          month: string | null;
         };
         Insert: {
           id?: string;
           budget_id: string;
           category_id: string;
           amount: number;
+          month?: string | null;
         };
         Update: {
           id?: string;
           budget_id?: string;
           category_id?: string;
           amount?: number;
+          month?: string | null;
         };
       };
       user_settings: {

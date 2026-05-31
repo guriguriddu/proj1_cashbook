@@ -79,7 +79,7 @@ export default function HomePage() {
       const catData = summary.categoryBreakdown[cat.id];
       const used = catData?.spent || 0;
       const cap = catData?.budget || 0;
-      const p = cap > 0 ? (used / cap) * 100 : 0;
+      const p = cap > 0 ? (used / cap) * 100 : used > 0 ? 100 : 0;
       return { cat, used, cap, pct: p, over: used > cap };
     })
     .sort((a, b) => b.cap - a.cap)

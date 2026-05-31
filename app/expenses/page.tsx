@@ -670,7 +670,7 @@ function ExpenseRow({ e, onClick, onDelete }: { e: Expense; onClick: () => void;
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 12,
           padding: '14px 20px', cursor: 'pointer', border: 0,
-          background: isOpen ? T.bgSoft : 'transparent',
+          background: isOpen ? T.bgSoft : T.bg,
           textAlign: 'left', position: 'relative', zIndex: 1,
           transform: `translateX(-${swipeX}px)`,
           transition: (swipeX === 0 || swipeX === DELETE_BTN_WIDTH) ? 'transform 0.2s ease, background 0.2s' : 'none',

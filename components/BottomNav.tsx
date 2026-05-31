@@ -33,8 +33,7 @@ export default function BottomNav() {
         bottom: 0,
         left: 0,
         right: 0,
-        zIndex: 50,
-        height: 84,
+        zIndex: 100,
         background: 'rgba(255,255,255,0.96)',
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
@@ -43,9 +42,7 @@ export default function BottomNav() {
         alignItems: 'flex-start',
         justifyContent: 'center',
         paddingTop: 10,
-        paddingBottom: 24,
-        maxWidth: 512,
-        margin: '0 auto',
+        paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
       }}
     >
       {navItems.map((item) => {

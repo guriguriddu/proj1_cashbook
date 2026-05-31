@@ -20,7 +20,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthGuard>
-      <main className="flex-1 pb-20 max-w-lg mx-auto w-full">
+      <main className="flex-1 max-w-lg mx-auto w-full" style={{ paddingBottom: 'calc(64px + max(20px, env(safe-area-inset-bottom)))' }}>
         {children}
       </main>
       <BottomNav />

@@ -124,32 +124,32 @@ export default function OCRReviewPage() {
       }
     });
 
-    // 1. 추출 내 중복 감지: 같은 날짜 + 같은 금액 + 같은 사용처
-    const seen = new Map<string, string>(); // key -> first item id
+    // 1. 추출 내 중복 감지: 같은 날짜 + 같은 금액 + 유사 사용처 (substring 포함)
+    const normM = (s: string) => s.trim().toLowerCase().replace(/[\s()]/g, '').replace(/주식회사|㈜/g, '');
+    const seenItems: ReviewItem[] = [];
     items.forEach((item) => {
-      if (item.excluded) return; // 이미 제외된 항목 스킵
-      const key = `${item.date}_${item.amount}_${item.merchant.trim().toLowerCase()}`;
-      if (seen.has(key)) {
+      if (item.excluded) return;
+      const nb = normM(item.merchant);
+      const dupOriginal = seenItems.find(s => {
+        if (s.date !== item.date || s.amount !== item.amount) return false;
+        const na = normM(s.merchant);
+        return na === nb || na.includes(nb) || nb.includes(na);
+      });
+      if (dupOriginal) {
         item.isDuplicate = true;
-        item.duplicateOf = seen.get(key);
+        item.duplicateOf = dupOriginal.id;
         const isPreauthPair = PREAUTH_KEYWORDS.some(kw => item.merchant.includes(kw));
         if (isPreauthPair) {
           item.excluded = true;
           item.excludeReason = '결제 최종 취소됨';
-          const original = items.find(i => i.id === item.duplicateOf);
-          if (original) {
-            original.excluded = true;
-            original.excludeReason = '결제 최종 취소됨';
-            original.isDuplicate = false;
-          }
+          dupOriginal.excluded = true;
+          dupOriginal.excludeReason = '결제 최종 취소됨';
+          dupOriginal.isDuplicate = false;
         } else {
-          const original = items.find(i => i.id === item.duplicateOf);
-          if (original) {
-            original.removedDuplicateCount = (original.removedDuplicateCount || 0) + 1;
-          }
+          dupOriginal.removedDuplicateCount = (dupOriginal.removedDuplicateCount || 0) + 1;
         }
       } else {
-        seen.set(key, item.id);
+        seenItems.push(item);
       }
     });
 

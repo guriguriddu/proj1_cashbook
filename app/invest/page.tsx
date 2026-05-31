@@ -176,11 +176,49 @@ function solveMonthlyRate(pv: number, pmt: number, fv: number, n: number): numbe
   return (lo + hi) / 2;
 }
 
+// ─── 연말정산 계산 ────────────────────────────────────────────────────────────
+
+interface YearendInputs {
+  totalSalary: number;
+  creditCard: number;
+  checkCard: number;
+  traditional: number;
+  transit: number;
+}
+
+function calcYearendDeduction(inputs: YearendInputs) {
+  const { totalSalary, creditCard, checkCard, traditional, transit } = inputs;
+  const threshold = Math.floor(totalSalary * 0.25);
+
+  // 신용카드로 threshold 먼저 소진
+  const creditAfterThreshold = Math.max(0, creditCard - threshold);
+  const remainingThreshold = Math.max(0, threshold - creditCard);
+  const checkAfterThreshold = Math.max(0, checkCard - remainingThreshold);
+
+  const creditDeduction = Math.floor(creditAfterThreshold * 0.15);
+  const checkDeduction = Math.floor(checkAfterThreshold * 0.30);
+  const traditionalDeduction = Math.floor(traditional * 0.40);
+  const transitDeduction = Math.floor(transit * 0.40);
+
+  const baseLimit = totalSalary <= 70_000_000 ? 3_000_000 : totalSalary <= 120_000_000 ? 2_500_000 : 2_000_000;
+  const baseDeduction = Math.min(creditDeduction + checkDeduction, baseLimit);
+  const extraTraditional = Math.min(traditionalDeduction, 1_000_000);
+  const extraTransit = Math.min(transitDeduction, 1_000_000);
+  const totalDeduction = baseDeduction + extraTraditional + extraTransit;
+
+  return {
+    threshold, creditDeduction, checkDeduction,
+    traditionalDeduction, transitDeduction,
+    baseLimit, baseDeduction, extraTraditional, extraTransit,
+    totalDeduction, remainingThreshold,
+  };
+}
+
 // ─── 타입 ────────────────────────────────────────────────────────────────────
 
-type Tab = 'simulation' | 'tax';
+type Tab = 'simulation' | 'tax' | 'yearend';
 type SimMode = 'forward' | 'goal';
-type TaxType = 'dividend' | 'capital';
+type TaxType = 'quick' | 'dividend' | 'capital';
 
 // ─── 메인 페이지 ─────────────────────────────────────────────────────────────
 
@@ -223,8 +261,25 @@ export default function InvestPage() {
     if (typeof window !== 'undefined') {
       const t = new URLSearchParams(window.location.search).get('tab');
       if (t === 'capital') return 'capital';
+      if (t === 'quick') return 'quick';
     }
-    return 'dividend';
+    return 'quick';
+  });
+
+  // 국장/미장 빠른 세금 계산
+  const [quickInputs, setQuickInputs] = useState({
+    krDividend: 0,
+    usGain: 0,
+    usDividend: 0,
+  });
+
+  // 연말정산 계산기
+  const [yearendInputs, setYearendInputs] = useState<YearendInputs>({
+    totalSalary: 0,
+    creditCard: 0,
+    checkCard: 0,
+    traditional: 0,
+    transit: 0,
   });
 
   // 배당 계산기 입력값
@@ -258,6 +313,23 @@ export default function InvestPage() {
   });
 
   const [editingField, setEditingField] = useState<string | null>(null);
+
+  // 국장/미장 빠른 계산
+  const quickResult = (() => {
+    const krDividendTax = Math.floor(quickInputs.krDividend * 0.154);
+    const usGainTaxable = Math.max(0, quickInputs.usGain - 2_500_000);
+    const usGainTax = Math.floor(usGainTaxable * 0.22);
+    const usDividendTax = Math.floor(quickInputs.usDividend * 0.15);
+    const total = krDividendTax + usGainTax + usDividendTax;
+    const netGain = quickInputs.usGain - usGainTax;
+    const netDividend = (quickInputs.krDividend + quickInputs.usDividend) - krDividendTax - usDividendTax;
+    return { krDividendTax, usGainTaxable, usGainTax, usDividendTax, total, netGain, netDividend };
+  })();
+
+  const yearendResult = calcYearendDeduction(
+    yearendInputs.totalSalary > 0 ? yearendInputs : { ...yearendInputs, totalSalary: laborIncome }
+  );
+  const effectiveSalary = yearendInputs.totalSalary > 0 ? yearendInputs.totalSalary : laborIncome;
 
   // 계산
   const divResult = calcDividendTax({ ...divInputs, laborIncome });
@@ -347,11 +419,52 @@ export default function InvestPage() {
       set: (v) => setSimInputs(p => ({ ...p, dividendYield: v })),
       presets: [{ value: 0, label: '0%' }, { value: 2, label: '2%' }, { value: 3, label: '3%' }, { value: 5, label: '5%' }],
     },
+    krDividend: {
+      label: '국장 배당금 (세전)', value: quickInputs.krDividend, unit: '원', step: 500_000,
+      set: (v) => setQuickInputs(p => ({ ...p, krDividend: v })),
+      presets: [{ value: 0, label: '없음' }, { value: 1_000_000, label: '100만' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }],
+    },
+    usGain: {
+      label: '미장 양도차익 (매도가−매수가)', value: quickInputs.usGain, unit: '원', step: 1_000_000,
+      set: (v) => setQuickInputs(p => ({ ...p, usGain: v })),
+      presets: [{ value: 0, label: '없음' }, { value: 2_500_000, label: '250만' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }],
+    },
+    usDividend: {
+      label: '미장 배당금 (세전)', value: quickInputs.usDividend, unit: '원', step: 500_000,
+      set: (v) => setQuickInputs(p => ({ ...p, usDividend: v })),
+      presets: [{ value: 0, label: '없음' }, { value: 1_000_000, label: '100만' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }],
+    },
+    yearendSalary: {
+      label: '연간 총급여 (세전)', value: yearendInputs.totalSalary || laborIncome, unit: '원', step: 1_000_000,
+      set: (v) => setYearendInputs(p => ({ ...p, totalSalary: v })),
+      presets: [{ value: 30_000_000, label: '3,000만' }, { value: 50_000_000, label: '5,000만' }, { value: 70_000_000, label: '7,000만' }, { value: 100_000_000, label: '1억' }],
+    },
+    yearendCredit: {
+      label: '연간 신용카드 사용액', value: yearendInputs.creditCard, unit: '원', step: 500_000,
+      set: (v) => setYearendInputs(p => ({ ...p, creditCard: v })),
+      presets: [{ value: 0, label: '없음' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }, { value: 20_000_000, label: '2,000만' }],
+    },
+    yearendCheck: {
+      label: '연간 체크카드+현금영수증', value: yearendInputs.checkCard, unit: '원', step: 500_000,
+      set: (v) => setYearendInputs(p => ({ ...p, checkCard: v })),
+      presets: [{ value: 0, label: '없음' }, { value: 3_000_000, label: '300만' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }],
+    },
+    yearendTraditional: {
+      label: '전통시장 사용액', value: yearendInputs.traditional, unit: '원', step: 100_000,
+      set: (v) => setYearendInputs(p => ({ ...p, traditional: v })),
+      presets: [{ value: 0, label: '없음' }, { value: 500_000, label: '50만' }, { value: 1_000_000, label: '100만' }, { value: 2_500_000, label: '250만' }],
+    },
+    yearendTransit: {
+      label: '대중교통 사용액', value: yearendInputs.transit, unit: '원', step: 100_000,
+      set: (v) => setYearendInputs(p => ({ ...p, transit: v })),
+      presets: [{ value: 0, label: '없음' }, { value: 500_000, label: '50만' }, { value: 1_000_000, label: '100만' }, { value: 2_000_000, label: '200만' }],
+    },
   };
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'simulation', label: '투자 시뮬' },
     { id: 'tax', label: '세금 계산' },
+    { id: 'yearend', label: '연말정산' },
   ];
 
   return (
@@ -523,6 +636,7 @@ export default function InvestPage() {
             <div style={{ padding: '12px 20px 4px' }}>
               <div style={{ display: 'flex', background: T.bgSoft, borderRadius: 10, padding: 3, border: `1px solid ${T.divider}` }}>
                 {([
+                  { id: 'quick' as TaxType, label: '국장/미장' },
                   { id: 'dividend' as TaxType, label: '배당세' },
                   { id: 'capital' as TaxType, label: '양도소득세' },
                 ] as { id: TaxType; label: string }[]).map(m => (
@@ -533,7 +647,7 @@ export default function InvestPage() {
                       flex: 1, padding: '9px 0', borderRadius: 7, border: 0,
                       background: taxType === m.id ? T.text : 'transparent',
                       color: taxType === m.id ? '#fff' : T.textSec,
-                      fontSize: 13, fontWeight: taxType === m.id ? 700 : 600,
+                      fontSize: 12, fontWeight: taxType === m.id ? 700 : 600,
                       cursor: 'pointer', letterSpacing: '-0.01em',
                       transition: 'all .15s',
                     }}
@@ -543,6 +657,49 @@ export default function InvestPage() {
                 ))}
               </div>
             </div>
+
+            {/* 국장/미장 빠른 세금 */}
+            {taxType === 'quick' && (
+              <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <SectionCard title="국장 (코스피·코스닥·ETF)">
+                  <InputRow label="배당금 (세전)" value={formatWon(quickInputs.krDividend)} onTap={() => setEditingField('krDividend')} noBorder />
+                </SectionCard>
+
+                <SectionCard title="미장 (미국·해외)">
+                  <InputRow label="양도차익 (매도가 − 매수가)" value={formatWon(quickInputs.usGain)} onTap={() => setEditingField('usGain')} />
+                  <InputRow label="배당금 (세전)" value={formatWon(quickInputs.usDividend)} onTap={() => setEditingField('usDividend')} noBorder />
+                </SectionCard>
+
+                <SectionCard title="예상 세금">
+                  {quickInputs.krDividend > 0 && (
+                    <ResultRow label="국장 배당세 (15.4% 원천징수)" value={formatWon(quickResult.krDividendTax)} color={T.danger} />
+                  )}
+                  {quickInputs.usGain > 0 && (
+                    <>
+                      <ResultRow label="미장 양도세 기본공제 250만" value={`−${formatWon(Math.min(quickInputs.usGain, 2_500_000))}`} color={T.accent} />
+                      <ResultRow label="미장 양도세 (22%)" value={formatWon(quickResult.usGainTax)} color={quickResult.usGainTax > 0 ? T.danger : T.textSec} />
+                    </>
+                  )}
+                  {quickInputs.usDividend > 0 && (
+                    <ResultRow label="미장 배당세 (15% 원천징수)" value={formatWon(quickResult.usDividendTax)} color={T.danger} />
+                  )}
+                  <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                  <ResultRow label="총 예상 세금" value={formatWon(quickResult.total)} color={T.danger} big />
+                  {(quickInputs.krDividend + quickInputs.usDividend) > 0 && (
+                    <ResultRow label="세후 배당금 실수령" value={formatWon(quickResult.netDividend)} color={T.accent} />
+                  )}
+                  {quickInputs.usGain > 0 && (
+                    <ResultRow label="세후 양도차익 실수령" value={formatWon(quickResult.netGain)} color={T.accent} />
+                  )}
+                </SectionCard>
+
+                <InfoBanner tone="neutral">
+                  국장 소액주주는 양도세 없음. 미장은 연간 손익통산 후 250만 공제, 22%(지방세 포함) 부과.<br />
+                  배당은 원천징수되며, 배당+이자 합계 2천만 초과 시 종합과세 대상이에요.<br />
+                  정확한 계산은 아래 <b>배당세</b> · <b>양도소득세</b> 탭을 이용하세요.
+                </InfoBanner>
+              </div>
+            )}
 
             {/* 배당세 */}
             {taxType === 'dividend' && (
@@ -692,6 +849,90 @@ export default function InvestPage() {
               </div>
             )}
           </>
+        )}
+
+        {/* ── 연말정산 탭 ── */}
+        {tab === 'yearend' && (
+          <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+            {/* 전략 가이드 */}
+            <div style={{ background: T.text, borderRadius: 18, padding: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: 12 }}>
+                카드 전략 핵심
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {[
+                  { step: '1', text: '총급여 25%까지는', sub: '어떤 결제수단이든 공제 없음 → 신용카드로 포인트/혜택 챙기기', color: '#60A5FA' },
+                  { step: '2', text: '25% 초과분부터', sub: '체크카드·현금영수증 30% 공제 > 신용카드 15% — 체크카드가 2배 유리', color: '#34D399' },
+                  { step: '3', text: '전통시장·대중교통', sub: '별도 40% 공제 (한도 각 100만) — 무조건 영수증 챙기기', color: '#FBBF24' },
+                ].map(s => (
+                  <div key={s.step} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                    <div style={{ width: 22, height: 22, borderRadius: 11, background: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: '#000' }}>{s.step}</span>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{s.text}</div>
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 1.5, marginTop: 2 }}>{s.sub}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 공제율 비교표 */}
+            <SectionCard title="결제수단별 공제율">
+              {[
+                { label: '신용카드', rate: '15%', note: '공제율 낮음 → 25%까지 써서 혜택만', color: T.textSec },
+                { label: '체크카드 · 현금영수증', rate: '30%', note: '핵심 구간', color: T.accent },
+                { label: '전통시장', rate: '40%', note: '별도 한도 100만', color: '#059669' },
+                { label: '대중교통', rate: '40%', note: '별도 한도 100만', color: '#059669' },
+              ].map((r, i, arr) => (
+                <div key={r.label} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '13px 16px',
+                  borderBottom: i < arr.length - 1 ? `1px solid ${T.divider}` : 'none',
+                }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{r.label}</div>
+                    <div style={{ fontSize: 11, color: T.textTer, marginTop: 2 }}>{r.note}</div>
+                  </div>
+                  <span style={{ fontSize: 20, fontWeight: 800, color: r.color, fontVariantNumeric: 'tabular-nums' }}>{r.rate}</span>
+                </div>
+              ))}
+            </SectionCard>
+
+            {/* 공제액 계산기 */}
+            <SectionCard title="공제액 계산기">
+              <InputRow label="연간 총급여 (세전)" value={formatWon(effectiveSalary)} onTap={() => setEditingField('yearendSalary')} />
+              <InputRow label="신용카드 사용액" value={formatWon(yearendInputs.creditCard)} onTap={() => setEditingField('yearendCredit')} />
+              <InputRow label="체크카드 + 현금영수증" value={formatWon(yearendInputs.checkCard)} onTap={() => setEditingField('yearendCheck')} />
+              <InputRow label="전통시장" value={formatWon(yearendInputs.traditional)} onTap={() => setEditingField('yearendTraditional')} />
+              <InputRow label="대중교통" value={formatWon(yearendInputs.transit)} onTap={() => setEditingField('yearendTransit')} noBorder />
+            </SectionCard>
+
+            {effectiveSalary > 0 && (
+              <SectionCard title="예상 소득공제액">
+                <ResultRow label={`공제 미적용 구간 (총급여 25%)`} value={formatWon(yearendResult.threshold)} color={T.textSec} />
+                <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                {yearendInputs.creditCard > 0 && <ResultRow label="신용카드 공제 (15%)" value={formatWon(yearendResult.creditDeduction)} color={T.accent} />}
+                {yearendInputs.checkCard > 0 && <ResultRow label="체크카드·현금 공제 (30%)" value={formatWon(yearendResult.checkDeduction)} color={T.accent} />}
+                {yearendInputs.traditional > 0 && <ResultRow label="전통시장 공제 (40%)" value={formatWon(yearendResult.extraTraditional)} color={T.accent} />}
+                {yearendInputs.transit > 0 && <ResultRow label="대중교통 공제 (40%)" value={formatWon(yearendResult.extraTransit)} color={T.accent} />}
+                {yearendResult.baseDeduction >= yearendResult.baseLimit && (
+                  <div style={{ padding: '6px 16px' }}>
+                    <span style={{ fontSize: 11, color: T.warn, fontWeight: 600 }}>기본 공제한도 {formatWon(yearendResult.baseLimit)} 도달</span>
+                  </div>
+                )}
+                <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                <ResultRow label="총 소득공제" value={formatWon(yearendResult.totalDeduction)} color={T.accent} big />
+              </SectionCard>
+            )}
+
+            <InfoBanner tone="neutral">
+              공제 한도: 총급여 7천만↓ 300만 · 7천만~1.2억 250만 · 1.2억↑ 200만원 (기본) + 전통시장·대중교통 각 100만 별도.<br />
+              실제 절세액은 본인 소득세율에 따라 다르며, 근로소득공제·인적공제 등 다른 공제가 먼저 적용돼요.
+            </InfoBanner>
+          </div>
         )}
 
         <div style={{ height: 20 }} />

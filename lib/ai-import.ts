@@ -35,22 +35,54 @@ export async function parseFileWithAI(
     throw new Error('거래 내역을 찾지 못했습니다. 파일을 확인해주세요.');
   }
 
-  // Map to ParsedRow
-  const parsed: ParsedRow[] = transactions
-    .filter(t => t.date && t.merchant && t.amount > 0)
-    .map((t, idx) => ({
-      idx,
+  let idxCounter = 0;
+  const included: ParsedRow[] = [];
+  const excluded: ParsedRow[] = [];
+
+  for (const t of transactions) {
+    if (!t.date || !t.merchant) continue;
+    const abs = Math.abs(t.amount);
+    if (abs === 0) continue;
+
+    const row: ParsedRow = {
+      idx: idxCounter++,
       date: t.date,
       merchant: t.merchant.trim(),
-      amount: Math.abs(t.amount),
+      amount: abs,
       category: t.category || 'other',
       payMethod: '',
-      rawType: '지출',
+      rawType: t.amount < 0 ? '취소/환불' : '지출',
       rawBigCat: t.originalCategory || '',
       rawSmallCat: '',
       status: 'include' as const,
       selected: true,
-    }));
+    };
+
+    if (t.amount < 0) {
+      // 음수 금액 = 취소·환불·역발행 → 제외됨으로 분류
+      row.status = 'excluded' as const;
+      row.selected = false;
+      row.excludeReason = '취소/환불 항목';
+      excluded.push(row);
+    } else {
+      included.push(row);
+    }
+  }
+
+  // 쌍 상쇄 감지: 동일 금액·가맹점 양수/음수 쌍이 있으면 양수 항목도 제외됨으로 이동
+  const cancelSet = new Set(excluded.map(r => `${r.date}|${r.merchant}|${r.amount}`));
+  const parsed: ParsedRow[] = [];
+  for (const row of included) {
+    const key = `${row.date}|${row.merchant}|${row.amount}`;
+    if (cancelSet.has(key)) {
+      row.status = 'excluded' as const;
+      row.selected = false;
+      row.excludeReason = '취소/환불 상쇄 항목';
+      excluded.push(row);
+    } else {
+      parsed.push(row);
+    }
+  }
 
   // Duplicate detection
   parsed.forEach(row => {
@@ -67,8 +99,7 @@ export async function parseFileWithAI(
 
   const toInclude = parsed.filter(r => r.status === 'include');
   const needsReview = parsed.filter(r => r.status === 'duplicate_suspect');
-  const excluded: ParsedRow[] = [];
-  const months = [...new Set(parsed.map(r => r.date.slice(0, 7)))].sort().reverse();
+  const months = [...new Set([...parsed, ...excluded].map(r => r.date.slice(0, 7)))].sort().reverse();
 
   return { toInclude, needsReview, excluded, months };
 }

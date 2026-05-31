@@ -358,6 +358,7 @@ export default function ImportPage() {
               const effectiveCat = rowCategories[row.idx] ?? row.category;
               const cat = DEFAULT_CATEGORIES.find((c) => c.id === effectiveCat);
               const isReviewable = activeTab !== 'excluded';
+              const isExcludedItem = activeTab === 'excluded';
               const isChecked = selected.has(row.idx);
               const statusInfo = STATUS_LABEL[row.status] ?? { label: row.status, color: T.textTer };
               const isDutchPay = row.status === 'dutch_pay';
@@ -368,7 +369,8 @@ export default function ImportPage() {
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12,
                     padding: '13px 16px', borderBottom: `1px solid ${T.divider}`,
-                    background: isChecked ? T.accentSoft + '40' : 'transparent',
+                    background: isExcludedItem ? T.bgMuted : isChecked ? T.accentSoft + '40' : 'transparent',
+                    opacity: isExcludedItem ? 0.75 : 1,
                   }}
                 >
                   {isReviewable && (
@@ -411,7 +413,7 @@ export default function ImportPage() {
                     style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, padding: 0, cursor: isReviewable ? 'pointer' : 'default', textAlign: 'left' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: isExcludedItem ? T.textTer : T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: isExcludedItem ? 'line-through' : 'none' }}>
                         {row.merchant}
                       </span>
                       <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: statusInfo.color + '18', color: statusInfo.color }}>
@@ -439,7 +441,7 @@ export default function ImportPage() {
                   </button>
 
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: isExcludedItem ? T.textSec : T.text, fontVariantNumeric: 'tabular-nums', textDecoration: isExcludedItem ? 'line-through' : 'none' }}>
                       {formatWon(row.amount)}
                     </div>
                     {isDutchPay && row.dutchPay && (

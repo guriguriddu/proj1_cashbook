@@ -201,12 +201,17 @@ export default function OCRReviewPage() {
     );
   }
 
-  const active = items.filter((i) => !i.excluded);
+  // 중복된 원본 ID 세트 (이 ID를 가진 항목 옆에 "!" 표시)
+  const duplicatedOriginalIds = new Set(
+    items.filter(i => i.isDuplicate && i.duplicateOf).map(i => i.duplicateOf!)
+  );
+  // isDuplicate 항목은 목록에서 숨기고 원본만 표시
+  const active = items.filter((i) => !i.excluded && !i.isDuplicate);
   const total = active.reduce((a, i) => a + i.amount, 0);
   const needsReviewCount = active.filter((i) => i.confidence && i.confidence < 0.8).length;
 
   // 중복 및 취소 카운트
-  const duplicateCount = active.filter((i) => i.isDuplicate).length;
+  const duplicateCount = duplicatedOriginalIds.size;
   const existingDuplicateCount = active.filter((i) => i.isExistingDuplicate).length;
   const cancelPairCount = active.filter((i) => i.cancelledBy || i.cancels).length;
   const transferCount = active.filter((i) => i.isPaymentTransfer).length;
@@ -375,26 +380,20 @@ export default function OCRReviewPage() {
                   style={{
                     padding: '10px 12px',
                     borderRadius: 10,
-                    background: 'rgba(239,68,68,0.12)',
+                    background: 'rgba(107,114,128,0.12)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
                     fontSize: 12,
                     fontWeight: 600,
-                    color: '#DC2626',
+                    color: '#374151',
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 14 14">
-                    <path
-                      d="M7 1l6.5 11.5h-13L7 1zM7 5.5v3M7 10.5v.5"
-                      stroke="#DC2626"
-                      strokeWidth="1.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      fill="none"
-                    />
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <circle cx="7" cy="7" r="6" stroke="#6B7280" strokeWidth="1.4" />
+                    <path d="M4.5 7l2 2 3-3" stroke="#6B7280" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  {duplicateCount}건 중복 의심 - 확인 후 제외해주세요
+                  같은 내역 {duplicateCount}건 중복 발견 — 자동으로 하나씩만 남겼어요
                 </div>
               )}
               {cancelPairCount > 0 && (
@@ -961,6 +960,7 @@ function OCRRow({
         background: bgColor,
         borderBottom: last ? 'none' : `1px solid ${T.divider}`,
         borderLeft: `3px solid ${borderColor}`,
+        position: 'relative',
       }}
     >
       <button
@@ -1002,11 +1002,10 @@ function OCRRow({
             </div>
             {isInvalid && <Badge tone="danger" size="sm">입력필요</Badge>}
             {!isInvalid && item.isExistingDuplicate && <Badge tone="blue" size="sm">기존</Badge>}
-            {!isInvalid && item.isDuplicate && !item.isExistingDuplicate && <Badge tone="danger" size="sm">중복</Badge>}
             {!isInvalid && hasCancelMatch && <Badge tone="purple" size="sm">{item.isCancellation ? '취소' : '취소됨'}</Badge>}
             {!isInvalid && item.isPaymentTransfer && <Badge tone="warn" size="sm">금액확인</Badge>}
             {!isInvalid && item.linkedTransferId && <Badge tone="accent" size="sm">연결됨</Badge>}
-            {!isInvalid && needsReview && !item.isDuplicate && !hasCancelMatch && !item.isExistingDuplicate && !item.isPaymentTransfer && <Badge tone="warn" size="sm">확인</Badge>}
+            {!isInvalid && needsReview && !hasCancelMatch && !item.isExistingDuplicate && !item.isPaymentTransfer && <Badge tone="warn" size="sm">확인</Badge>}
           </div>
           <div
             style={{

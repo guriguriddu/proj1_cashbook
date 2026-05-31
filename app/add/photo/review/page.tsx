@@ -17,6 +17,7 @@ import {
   DatePicker,
 } from '@/components/ui';
 import { saveExpenses, generateId, getExpenses, updateExpense } from '@/lib/supabase-storage';
+import { saveImportLog } from '@/lib/import-log';
 import { formatDateShort, groupByDate } from '@/lib/utils';
 import { DEFAULT_CATEGORIES, getCategoryById } from '@/constants/categories';
 import type { ExtractedTransaction, Expense } from '@/types';
@@ -388,6 +389,18 @@ export default function OCRReviewPage() {
     }
 
     await saveExpenses(expensesToSave);
+
+    // import 로그 저장
+    const dates = expensesToSave.map(e => e.date).sort();
+    saveImportLog({
+      source: 'ocr',
+      count: expensesToSave.length,
+      dateRangeStart: dates[0],
+      dateRangeEnd: dates[dates.length - 1],
+      merchants: [...new Set(expensesToSave.map(e => e.merchant))].slice(0, 5),
+      totalAmount: expensesToSave.reduce((a, e) => a + e.amount, 0),
+    });
+
     sessionStorage.removeItem('ocrTransactions');
     sessionStorage.removeItem('uploadedImagePaths');
     router.push('/');

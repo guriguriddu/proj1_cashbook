@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import {
   Screen,
   ScreenBody,
@@ -8,9 +9,28 @@ import {
   T,
   Badge,
 } from '@/components/ui';
+import { getImportLogs, clearImportLogs, type ImportLog } from '@/lib/import-log';
+
+function formatWon(n: number) {
+  return n >= 10000 ? Math.floor(n / 10000) + '만원' : n.toLocaleString() + '원';
+}
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+function formatRange(start: string, end: string) {
+  if (start === end) return start.slice(5).replace('-', '/');
+  return start.slice(5).replace('-', '/') + ' ~ ' + end.slice(5).replace('-', '/');
+}
 
 export default function AddPage() {
   const router = useRouter();
+  const [logs, setLogs] = useState<ImportLog[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => {
+    setLogs(getImportLogs());
+  }, []);
 
   return (
     <Screen>
@@ -117,17 +137,61 @@ export default function AddPage() {
           />
         </div>
 
-        <div
-          style={{
-            padding: '8px 20px 0',
-            fontSize: 12,
-            color: T.textTer,
-            lineHeight: 1.6,
-          }}
-        >
-          여러 장의 영수증을 한 번에 올려도 괜찮아요. 추출 후 검수 단계에서 자유롭게
-          수정·제외할 수 있어요.
+        <div style={{ padding: '0 20px 8px', fontSize: 12, color: T.textTer, lineHeight: 1.6 }}>
+          여러 장의 영수증을 한 번에 올려도 괜찮아요. 추출 후 검수 단계에서 자유롭게 수정·제외할 수 있어요.
         </div>
+
+        {/* import 히스토리 */}
+        {logs.length > 0 && (
+          <div style={{ padding: '8px 20px 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <button
+                onClick={() => setShowHistory(v => !v)}
+                style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: T.textSec, letterSpacing: '-0.01em' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <circle cx="7" cy="7" r="6" stroke={T.textSec} strokeWidth="1.4" />
+                  <path d="M7 4v3.5l2 1.5" stroke={T.textSec} strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+                가져오기 기록 ({logs.length}건)
+                <svg width="12" height="12" viewBox="0 0 12 12" style={{ transform: showHistory ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+                  <path d="M2 4l4 4 4-4" stroke={T.textSec} strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              {showHistory && (
+                <button
+                  onClick={() => { clearImportLogs(); setLogs([]); setShowHistory(false); }}
+                  style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: 12, color: T.textTer }}
+                >
+                  전체 삭제
+                </button>
+              )}
+            </div>
+            {showHistory && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {logs.map(log => (
+                  <div key={log.id} style={{ background: T.bgSoft, borderRadius: 12, padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: log.source === 'ocr' ? T.accentSoft : '#E8F5E9', color: log.source === 'ocr' ? T.accent : '#16A34A' }}>
+                          {log.source === 'ocr' ? '사진' : '파일'}
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{formatRange(log.dateRangeStart, log.dateRangeEnd)}</span>
+                      </div>
+                      <span style={{ fontSize: 11, color: T.textTer }}>{formatDate(log.importedAt)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: T.textSec }}>
+                      {log.count}건 · {formatWon(log.totalAmount)}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textTer, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {log.merchants.join(', ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </ScreenBody>
     </Screen>
   );

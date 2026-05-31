@@ -22,6 +22,7 @@ import {
 } from '@/lib/supabase-storage';
 import type { Expense } from '@/types';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
+import { saveImportLog } from '@/lib/import-log';
 
 type Stage = 'upload' | 'processing' | 'review' | 'saving' | 'done';
 type ReviewTab = 'include' | 'review' | 'excluded';
@@ -128,6 +129,15 @@ export default function ImportPage() {
         createdAt: new Date().toISOString(),
       }));
       await saveExpenses(expenses);
+      const dates = expenses.map(e => e.date).sort();
+      saveImportLog({
+        source: 'file',
+        count: expenses.length,
+        dateRangeStart: dates[0],
+        dateRangeEnd: dates[dates.length - 1],
+        merchants: [...new Set(expenses.map(e => e.merchant))].slice(0, 5),
+        totalAmount: expenses.reduce((a, e) => a + e.amount, 0),
+      });
       setSavedCount(expenses.length);
       setStage('done');
     } catch {

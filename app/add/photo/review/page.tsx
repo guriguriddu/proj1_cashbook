@@ -255,7 +255,10 @@ export default function OCRReviewPage() {
         (kw) => item.merchant.trim().toLowerCase() === kw.toLowerCase()
       );
 
-      if (hasPaymentKeyword && (hasTransferContext || isPurePayServiceName)) {
+      // "→ 송금" 패턴은 타인 송금(실지출)이므로 충전 아님
+      const isSendTransfer = /→\s*송금/.test(item.merchant) || /→\s*송금/.test(item.rawText);
+
+      if (!isSendTransfer && hasPaymentKeyword && (hasTransferContext || isPurePayServiceName)) {
         item.isPaymentTransfer = true;
       }
     });

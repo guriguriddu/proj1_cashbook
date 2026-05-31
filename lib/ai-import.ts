@@ -58,7 +58,15 @@ export async function parseFileWithAI(
       selected: true,
     };
 
-    if (t.amount < 0) {
+    const PREAUTH_KEYWORDS = ['가승인', '선승인', '임시승인'];
+    const isPreauth = PREAUTH_KEYWORDS.some(kw => row.merchant.includes(kw));
+
+    if (isPreauth) {
+      row.status = 'excluded' as const;
+      row.selected = false;
+      row.excludeReason = '가승인 (임시 승인)';
+      excluded.push(row);
+    } else if (t.amount < 0) {
       // 음수 금액 = 취소·환불·역발행 → 제외됨으로 분류
       row.status = 'excluded' as const;
       row.selected = false;

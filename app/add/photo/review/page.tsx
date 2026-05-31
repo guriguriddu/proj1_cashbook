@@ -118,8 +118,16 @@ export default function OCRReviewPage() {
       }
     });
 
-    // 1. 추출 내 중복 감지: 같은 날짜 + 같은 금액 + 같은 사용처
+    // 1-pre. 가승인/선승인/임시승인 항목 무조건 제외 (음수 쌍이 없어도)
     const PREAUTH_KEYWORDS = ['가승인', '선승인', '임시승인'];
+    items.forEach((item) => {
+      if (!item.excluded && PREAUTH_KEYWORDS.some(kw => item.merchant.includes(kw))) {
+        item.excluded = true;
+        item.excludeReason = '가승인 (임시 승인)';
+      }
+    });
+
+    // 1. 추출 내 중복 감지: 같은 날짜 + 같은 금액 + 같은 사용처
     const seen = new Map<string, string>(); // key -> first item id
     items.forEach((item) => {
       const key = `${item.date}_${item.amount}_${item.merchant.trim().toLowerCase()}`;

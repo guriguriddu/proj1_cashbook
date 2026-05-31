@@ -637,70 +637,111 @@ export default function OCRReviewPage() {
         ))}
 
         {/* 제외된 항목 */}
-        {excluded.length > 0 && (
-          <div style={{ marginTop: 16, padding: '12px 20px' }}>
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: T.textTer,
-                marginBottom: 8,
-              }}
-            >
-              제외된 {excluded.length}건
-            </div>
-            <div
-              style={{
-                background: T.bgSoft,
-                borderRadius: 12,
-                padding: '4px 0',
-              }}
-            >
-              {excluded.map((it) => (
-                <div
-                  key={it.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '10px 14px',
-                    fontSize: 13,
-                    color: T.textTer,
-                    textDecoration: 'line-through',
-                  }}
-                >
-                  <span style={{ flex: 1, overflow: 'hidden' }}>
-                    <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {it.merchant}
-                    </span>
-                    {it.excludeReason && (
-                      <span style={{ fontSize: 10, color: T.textTer, textDecoration: 'none', fontWeight: 500 }}>
-                        {it.excludeReason}
-                      </span>
-                    )}
-                  </span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    ₩{it.amount.toLocaleString('ko-KR')}
-                  </span>
-                  <button
-                    onClick={() => update(it.id, { excluded: false })}
+        {excluded.length > 0 && (() => {
+          // '결제 최종 취소됨' 항목들을 페어로 묶기 (같은 merchant+date+amount 기준)
+          const cancelledItems = excluded.filter(i => i.excludeReason === '결제 최종 취소됨');
+          const otherExcluded = excluded.filter(i => i.excludeReason !== '결제 최종 취소됨');
+
+          // 페어 그룹핑: {key → [item, item?]}
+          const pairMap = new Map<string, ReviewItem[]>();
+          cancelledItems.forEach(item => {
+            const key = `${item.date}|${item.merchant.trim()}|${item.amount}`;
+            if (!pairMap.has(key)) pairMap.set(key, []);
+            pairMap.get(key)!.push(item);
+          });
+          const pairs = Array.from(pairMap.values());
+
+          return (
+            <div style={{ marginTop: 16, padding: '0 20px 12px' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, marginBottom: 8 }}>
+                제외된 {excluded.length}건
+              </div>
+
+              {/* 결제 취소 쌍 카드 */}
+              {pairs.map((pair) => {
+                const rep = pair[0];
+                return (
+                  <div
+                    key={`pair-${rep.id}`}
                     style={{
-                      border: 0,
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      color: T.accent,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      padding: '4px 0',
+                      background: '#FFF5F5',
+                      border: '1px solid #FFE0E0',
+                      borderRadius: 12,
+                      padding: '12px 14px',
+                      marginBottom: 8,
                     }}
                   >
-                    복구
-                  </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, color: '#E53E3E',
+                        background: '#FFE0E0', borderRadius: 4, padding: '2px 7px',
+                      }}>
+                        결제취소
+                      </span>
+                      <span style={{ fontSize: 10, color: T.textTer }}>결제 후 취소 · 순액 0원</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <CatIcon catId={rep.suggestedCategory} size={34} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 14, fontWeight: 600, color: T.textSec,
+                          textDecoration: 'line-through',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {rep.merchant}
+                        </div>
+                        <div style={{ fontSize: 11, color: T.textTer, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>
+                          +₩{rep.amount.toLocaleString('ko-KR')} → −₩{rep.amount.toLocaleString('ko-KR')} = 0원
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* 기타 제외 항목 */}
+              {otherExcluded.length > 0 && (
+                <div style={{ background: T.bgSoft, borderRadius: 12, padding: '4px 0' }}>
+                  {otherExcluded.map((it) => (
+                    <div
+                      key={it.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '10px 14px', fontSize: 13, color: T.textTer,
+                      }}
+                    >
+                      <span style={{ flex: 1, overflow: 'hidden' }}>
+                        <span style={{
+                          display: 'block', overflow: 'hidden', textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap', textDecoration: 'line-through',
+                        }}>
+                          {it.merchant}
+                        </span>
+                        {it.excludeReason && (
+                          <span style={{ fontSize: 10, color: T.textTer, fontWeight: 500 }}>
+                            {it.excludeReason}
+                          </span>
+                        )}
+                      </span>
+                      <span style={{ fontVariantNumeric: 'tabular-nums', textDecoration: 'line-through' }}>
+                        ₩{it.amount.toLocaleString('ko-KR')}
+                      </span>
+                      <button
+                        onClick={() => update(it.id, { excluded: false })}
+                        style={{
+                          border: 0, background: 'transparent', cursor: 'pointer',
+                          color: T.accent, fontSize: 13, fontWeight: 600, padding: '4px 0',
+                        }}
+                      >
+                        복구
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
       </ScreenBody>
 
       {/* 하단 저장 버튼 */}

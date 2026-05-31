@@ -16,7 +16,7 @@ import {
   FieldRow,
   DatePicker,
 } from '@/components/ui';
-import { saveExpenses, generateId, getExpenses } from '@/lib/supabase-storage';
+import { saveExpenses, generateId, getExpenses, updateExpense } from '@/lib/supabase-storage';
 import { formatDateShort, groupByDate } from '@/lib/utils';
 import { DEFAULT_CATEGORIES, getCategoryById } from '@/constants/categories';
 import type { ExtractedTransaction, Expense } from '@/types';
@@ -76,8 +76,12 @@ export default function OCRReviewPage() {
   const [mounted, setMounted] = useState(false);
   const [excludeConfirm, setExcludeConfirm] = useState<string | null>(null); // 제외 확인 대상 ID
   const [batchEditDate, setBatchEditDate] = useState<string | null>(null); // 일괄 수정할 원래 날짜
-  const [showExitConfirm, setShowExitConfirm] = useState(false); // 뒤로가기 확인 모달
-  const [uploadedImagePaths, setUploadedImagePaths] = useState<string[]>([]); // 업로드된 이미지 경로
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [uploadedImagePaths, setUploadedImagePaths] = useState<string[]>([]);
+  const [dutchSuggestions, setDutchSuggestions] = useState<{
+    expenseId: string; merchant: string; date: string;
+    originalAmount: number; myShare: number; peopleCount: number;
+  }[]>([]);
 
   useEffect(() => {
     setMounted(true);
@@ -90,10 +94,50 @@ export default function OCRReviewPage() {
       }
       if (stored) {
         const transactions: ExtractedTransaction[] = JSON.parse(stored);
-        // 기존 DB 데이터 가져오기
         const existingExpenses = await getExpenses();
         const processedItems = processTransactions(transactions, existingExpenses);
         setItems(processedItems);
+
+        // DB 기존 내역 n빵 수정 제안: 새 OCR 입금 + 기존 식비/카페 매칭
+        const DUTCH_CATS = ['food', 'cafe'];
+        const newIncoming = processedItems.filter(i => i.excludeReason === 'n빵 입금');
+        if (newIncoming.length > 0) {
+          const suggestions: typeof dutchSuggestions = [];
+          const usedIncoming = new Set<string>();
+          existingExpenses
+            .filter(e => DUTCH_CATS.includes(e.category) && e.amount >= 15000)
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .forEach(expense => {
+              const deadline = new Date(expense.date);
+              deadline.setDate(deadline.getDate() + 30);
+              const deadlineStr = deadline.toISOString().slice(0, 10);
+              const candidates = newIncoming.filter(t =>
+                !usedIncoming.has(t.id) && t.date >= expense.date && t.date <= deadlineStr
+              );
+              if (!candidates.length) return;
+              let best: { N: number; matched: typeof candidates; total: number } | null = null;
+              for (let N = 2; N <= 8; N++) {
+                const perPerson = expense.amount / N;
+                const tol = perPerson * 0.15;
+                const matched = candidates.filter(t => Math.abs(t.amount - perPerson) <= tol);
+                if (!matched.length) continue;
+                const total = matched.reduce((s, t) => s + t.amount, 0);
+                if (total < expense.amount * 0.25) continue;
+                if (!best || matched.length > best.matched.length) best = { N, matched, total };
+              }
+              if (!best) return;
+              best.matched.forEach(t => usedIncoming.add(t.id));
+              suggestions.push({
+                expenseId: expense.id,
+                merchant: expense.merchant,
+                date: expense.date,
+                originalAmount: expense.amount,
+                myShare: Math.max(0, expense.amount - best.total),
+                peopleCount: best.N,
+              });
+            });
+          if (suggestions.length > 0) setDutchSuggestions(suggestions);
+        }
       }
     };
     loadData();
@@ -233,7 +277,7 @@ export default function OCRReviewPage() {
         .sort((a, b) => a.date.localeCompare(b.date))
         .forEach(expense => {
           const deadline = new Date(expense.date);
-          deadline.setDate(deadline.getDate() + 7);
+          deadline.setDate(deadline.getDate() + 30);
           const deadlineStr = deadline.toISOString().slice(0, 10);
 
           const candidates = incomingPool.filter(t =>
@@ -562,6 +606,29 @@ export default function OCRReviewPage() {
                     />
                   </svg>
                   {needsReviewCount}건 카테고리 확인 필요
+                </div>
+              )}
+              {dutchSuggestions.length > 0 && (
+                <div style={{ padding: '10px 12px', borderRadius: 10, background: '#EEF2FF', border: '1px solid #C7D2FE', fontSize: 12, fontWeight: 600, color: '#4338CA' }}>
+                  <div style={{ marginBottom: 6 }}>n빵 {dutchSuggestions.length}건 — 이미 저장된 내역을 내 몫으로 수정할까요?</div>
+                  {dutchSuggestions.map(s => (
+                    <div key={s.expenseId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderTop: '1px solid #C7D2FE' }}>
+                      <div>
+                        <span style={{ fontWeight: 700 }}>{s.merchant}</span>
+                        <span style={{ color: '#6366F1', marginLeft: 6 }}>₩{s.originalAmount.toLocaleString()} → ₩{s.myShare.toLocaleString()}</span>
+                        <span style={{ color: '#818CF8', marginLeft: 4 }}>({s.peopleCount}명)</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          await updateExpense(s.expenseId, { amount: s.myShare } as never);
+                          setDutchSuggestions(prev => prev.filter(x => x.expenseId !== s.expenseId));
+                        }}
+                        style={{ border: 0, background: '#4F46E5', color: '#fff', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0, marginLeft: 8 }}
+                      >
+                        수정
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

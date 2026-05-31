@@ -203,13 +203,13 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
     let amount = 0
     let merchant = ''
     let category = ''
+    let txType = '지출' // 지출 | 입금
 
     for (const line of lines) {
       const trimmedLine = line.trim()
 
       if (trimmedLine.startsWith('날짜:')) {
         const dateStr = trimmedLine.replace('날짜:', '').trim()
-        // YYYY-MM-DD 형식 확인
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
           date = dateStr
         }
@@ -220,6 +220,8 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
         amount = isNeg ? -absVal : absVal
       } else if (trimmedLine.startsWith('사용처:')) {
         merchant = trimmedLine.replace('사용처:', '').trim()
+      } else if (trimmedLine.startsWith('유형:')) {
+        txType = trimmedLine.replace('유형:', '').trim()
       } else if (trimmedLine.startsWith('카테고리:')) {
         const catStr = trimmedLine.replace('카테고리:', '').trim().toLowerCase()
         if (validCategories.includes(catStr)) {
@@ -229,6 +231,7 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
     }
 
     if (amount !== 0 && merchant) {
+      const isIncoming = txType === '입금'
       const isRefund = amount < 0
       const absAmount = Math.abs(amount)
       const { excluded, reason } = isExcludedTransaction(merchant)
@@ -244,10 +247,10 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
         date,
         amount: absAmount,
         merchant,
-        suggestedCategory: (excluded || isRefund) ? 'exclude' : finalCategory,
+        suggestedCategory: (excluded || isRefund || isIncoming) ? 'exclude' : finalCategory,
         confidence,
-        isExcluded: excluded || isRefund,
-        excludeReason: isRefund ? '환불/취소 항목' : reason,
+        isExcluded: excluded || isRefund || isIncoming,
+        excludeReason: isIncoming ? 'n빵 입금' : isRefund ? '환불/취소 항목' : reason,
         rawText: block.trim(),
       })
     }

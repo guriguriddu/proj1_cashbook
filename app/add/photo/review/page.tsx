@@ -23,17 +23,24 @@ import type { ExtractedTransaction, Expense } from '@/types';
 
 interface ReviewItem extends ExtractedTransaction {
   excluded: boolean;
-  isDuplicate?: boolean;      // 중복 의심 (추출 내 중복)
-  duplicateOf?: string;       // 중복 원본 ID
-  removedDuplicateCount?: number; // 이 항목에서 제거된 중복 수
-  isExistingDuplicate?: boolean;  // DB에 이미 존재하는 내역
-  existingExpenseId?: string;     // 기존 DB 내역 ID
-  isCancellation?: boolean;   // 취소 내역
-  cancelledBy?: string;       // 이 결제를 취소한 내역 ID
-  cancels?: string;           // 이 취소가 상쇄하는 결제 ID
-  isPaymentTransfer?: boolean;    // 간편결제 충전/이체 내역
-  linkedPaymentId?: string;       // 연결된 실제 결제 ID
-  linkedTransferId?: string;      // 이 결제와 연결된 충전 ID
+  isDuplicate?: boolean;
+  duplicateOf?: string;
+  removedDuplicateCount?: number;
+  isExistingDuplicate?: boolean;
+  existingExpenseId?: string;
+  isCancellation?: boolean;
+  cancelledBy?: string;
+  cancels?: string;
+  isPaymentTransfer?: boolean;
+  linkedPaymentId?: string;
+  linkedTransferId?: string;
+  isIncoming?: boolean;         // 타인 입금 (n빵 감지용)
+  dutchPay?: {                  // n빵 감지 결과
+    originalAmount: number;
+    myShare: number;
+    receivedTotal: number;
+    peopleCount: number;
+  };
 }
 
 // 취소 관련 키워드
@@ -213,6 +220,50 @@ export default function OCRReviewPage() {
         matchingPayment.linkedTransferId = transfer.id;
       }
     });
+
+    // 6. n빵 감지: 식비/카페 15,000원 이상 + 타인 입금 패턴
+    const incomingPool = items
+      .filter(i => i.excludeReason === 'n빵 입금')
+      .map(i => ({ ...i, used: false }));
+
+    if (incomingPool.length > 0) {
+      const DUTCH_CATS = ['food', 'cafe'];
+      items
+        .filter(i => !i.excluded && DUTCH_CATS.includes(i.suggestedCategory) && i.amount >= 15000)
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .forEach(expense => {
+          const deadline = new Date(expense.date);
+          deadline.setDate(deadline.getDate() + 7);
+          const deadlineStr = deadline.toISOString().slice(0, 10);
+
+          const candidates = incomingPool.filter(t =>
+            !t.used && t.date >= expense.date && t.date <= deadlineStr
+          );
+          if (candidates.length === 0) return;
+
+          let best: { N: number; matched: typeof candidates; total: number } | null = null;
+          for (let N = 2; N <= 8; N++) {
+            const perPerson = expense.amount / N;
+            const tol = perPerson * 0.15;
+            const matched = candidates.filter(t => Math.abs(t.amount - perPerson) <= tol);
+            if (matched.length === 0) continue;
+            const total = matched.reduce((s, t) => s + t.amount, 0);
+            if (total < expense.amount * 0.25) continue;
+            if (!best || matched.length > best.matched.length) best = { N, matched, total };
+          }
+          if (!best) return;
+
+          best.matched.forEach(t => { t.used = true; });
+          const myShare = Math.max(0, expense.amount - best.total);
+          expense.dutchPay = {
+            originalAmount: expense.amount,
+            myShare,
+            receivedTotal: best.total,
+            peopleCount: best.N,
+          };
+          expense.amount = myShare;
+        });
+    }
 
     return items;
   }
@@ -1076,7 +1127,12 @@ function OCRRow({
             {!isInvalid && hasCancelMatch && <Badge tone="purple" size="sm">{item.isCancellation ? '취소' : '취소됨'}</Badge>}
             {!isInvalid && item.isPaymentTransfer && <Badge tone="warn" size="sm">금액확인</Badge>}
             {!isInvalid && item.linkedTransferId && <Badge tone="accent" size="sm">연결됨</Badge>}
-            {!isInvalid && needsReview && !hasCancelMatch && !item.isExistingDuplicate && !item.isPaymentTransfer && !hasDedupedItems && <Badge tone="warn" size="sm">확인</Badge>}
+            {!isInvalid && item.dutchPay && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: '#EEF2FF', color: '#4F46E5', border: '1px solid #C7D2FE' }}>
+                n빵 {item.dutchPay.peopleCount}명
+              </span>
+            )}
+            {!isInvalid && needsReview && !hasCancelMatch && !item.isExistingDuplicate && !item.isPaymentTransfer && !hasDedupedItems && !item.dutchPay && <Badge tone="warn" size="sm">확인</Badge>}
           </div>
           <div
             style={{
@@ -1088,6 +1144,11 @@ function OCRRow({
             }}
           >
             <span style={{ fontWeight: 600 }}>{category?.name || '기타'}</span>
+            {item.dutchPay && (
+              <span style={{ color: '#6366F1' }}>
+                · 원금 ₩{item.dutchPay.originalAmount.toLocaleString()} → 내 몫 ₩{item.dutchPay.myShare.toLocaleString()}
+              </span>
+            )}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -1095,7 +1156,7 @@ function OCRRow({
             style={{
               fontSize: 16,
               fontWeight: 700,
-              color: T.text,
+              color: item.dutchPay ? '#4F46E5' : T.text,
               fontVariantNumeric: 'tabular-nums',
               letterSpacing: '-0.02em',
             }}

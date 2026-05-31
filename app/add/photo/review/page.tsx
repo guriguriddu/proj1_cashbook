@@ -118,22 +118,6 @@ export default function OCRReviewPage() {
       }
     });
 
-    // 1-pre. 음수 취소 항목의 양수 원본 찾아서 함께 "결제 최종 취소됨"으로 제외
-    const cancelledItems = items.filter(i => i.excluded && i.excludeReason === '결제 취소됨');
-    cancelledItems.forEach((cancelItem) => {
-      const original = items.find(
-        i => !i.excluded &&
-             i.amount === cancelItem.amount &&
-             i.merchant.trim().toLowerCase() === cancelItem.merchant.trim().toLowerCase() &&
-             i.date === cancelItem.date
-      );
-      if (original) {
-        original.excluded = true;
-        original.excludeReason = '결제 최종 취소됨';
-        cancelItem.excludeReason = '결제 최종 취소됨';
-      }
-    });
-
     // 1. 추출 내 중복 감지: 같은 날짜 + 같은 금액 + 같은 사용처
     const PREAUTH_KEYWORDS = ['가승인', '선승인', '임시승인'];
     const seen = new Map<string, string>(); // key -> first item id

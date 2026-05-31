@@ -114,8 +114,17 @@ export default function OCRReviewPage() {
       }
     });
 
-    // 1. 추출 내 중복 감지: 같은 날짜 + 같은 금액 + 같은 사용처
+    // 1-pre. 가승인/선승인/임시승인은 쌍 여부와 무관하게 무조건 제외
+    // 가승인은 실제 청구가 아닌 임시 승인 — 항상 다른 이름의 실제 청구로 대체됨
     const PREAUTH_KEYWORDS = ['가승인', '선승인', '임시승인'];
+    items.forEach((item) => {
+      if (!item.excluded && PREAUTH_KEYWORDS.some(kw => item.merchant.includes(kw))) {
+        item.excluded = true;
+        item.excludeReason = '가승인 (임시 승인, 실제 청구 아님)';
+      }
+    });
+
+    // 1. 추출 내 중복 감지: 같은 날짜 + 같은 금액 + 같은 사용처
     const seen = new Map<string, string>(); // key -> first item id
     items.forEach((item) => {
       if (item.excluded) return; // 이미 제외된 항목 스킵

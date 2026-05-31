@@ -75,7 +75,7 @@ const PURE_PAY_SERVICE_NAMES = [
 ];
 
 // 은행 이체 키워드
-const BANK_TRANSFER_KEYWORDS = ['이체', '송금', '충전', '입금'];
+const BANK_TRANSFER_KEYWORDS = ['이체', '송금', '충전', '입금', '충전 후 송금'];
 
 export default function OCRReviewPage() {
   const router = useRouter();
@@ -256,7 +256,9 @@ export default function OCRReviewPage() {
       );
 
       // "→ 송금" 패턴은 타인 송금(실지출)이므로 충전 아님
-      const isSendTransfer = /→\s*송금/.test(item.merchant) || /→\s*송금/.test(item.rawText);
+      // 단, "충전 후 송금"은 bank pass-through이므로 예외 (충전으로 처리)
+      const isChargeAfterSend = textToCheck.includes('충전 후 송금');
+      const isSendTransfer = !isChargeAfterSend && (/→\s*송금/.test(item.merchant) || /→\s*송금/.test(item.rawText));
 
       if (!isSendTransfer && hasPaymentKeyword && (hasTransferContext || isPurePayServiceName)) {
         item.isPaymentTransfer = true;

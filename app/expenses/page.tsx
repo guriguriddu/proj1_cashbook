@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Screen,
@@ -196,10 +196,16 @@ function ExpensesContent() {
   const catBudget = catData ? budget.categoryBudgets[catData.id] || 0 : 0;
   const catPct = catBudget > 0 ? (filteredTotal / catBudget) * 100 : 0;
 
-  const handleDelete = async (id: string) => {
-    if (confirm('이 지출 내역을 삭제하시겠습니까?')) {
-      await storage.deleteExpense(id);
-      refreshExpenses();
+  const handleDelete = async (id: string, skipConfirm = false) => {
+    if (!skipConfirm && !confirm('이 지출 내역을 삭제하시겠습니까?')) return;
+    await storage.deleteExpense(id);
+    refreshExpenses();
+    if (period !== 'month') {
+      const i = periodInfo(period, offset);
+      if ('startDate' in i && i.startDate && i.endDate) {
+        setRangeLoading(true);
+        storage.getExpensesByDateRange(i.startDate, i.endDate).then(setRangeExpenses).finally(() => setRangeLoading(false));
+      }
     }
   };
 
@@ -364,7 +370,7 @@ function ExpensesContent() {
                 )}
                 <div>
                   {g.items.map((e) => (
-                    <ExpenseRow key={e.id} e={e} onClick={() => setEditingExpense(e)} />
+                    <ExpenseRow key={e.id} e={e} onClick={() => setEditingExpense(e)} onDelete={() => handleDelete(e.id, true)} />
                   ))}
                 </div>
               </div>
@@ -598,41 +604,104 @@ function PeriodPickerSheet({
   );
 }
 
-function ExpenseRow({ e, onClick }: { e: Expense; onClick: () => void }) {
+const DELETE_BTN_WIDTH = 76;
+
+function ExpenseRow({ e, onClick, onDelete }: { e: Expense; onClick: () => void; onDelete?: () => void }) {
   const cat = getCategoryById(e.category);
+  const [swipeX, setSwipeX] = useState(0);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const didSwipe = useRef(false);
+  const isOpen = swipeX >= DELETE_BTN_WIDTH;
+
+  const handleTouchStart = (ev: React.TouchEvent) => {
+    touchStartX.current = ev.touches[0].clientX;
+    touchStartY.current = ev.touches[0].clientY;
+    didSwipe.current = false;
+  };
+
+  const handleTouchMove = (ev: React.TouchEvent) => {
+    const dx = touchStartX.current - ev.touches[0].clientX;
+    const dy = Math.abs(touchStartY.current - ev.touches[0].clientY);
+    if (!didSwipe.current && Math.abs(dx) > 8 && Math.abs(dx) > dy) {
+      didSwipe.current = true;
+    }
+    if (didSwipe.current) {
+      setSwipeX(Math.max(0, Math.min(DELETE_BTN_WIDTH, dx)));
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (swipeX > DELETE_BTN_WIDTH * 0.5) {
+      setSwipeX(DELETE_BTN_WIDTH);
+    } else {
+      setSwipeX(0);
+    }
+  };
+
+  const handleClick = () => {
+    if (didSwipe.current) { didSwipe.current = false; return; }
+    if (isOpen) { setSwipeX(0); return; }
+    onClick();
+  };
+
   return (
-    <button
-      onClick={onClick}
-      style={{
-        width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-        padding: '14px 20px', cursor: 'pointer', border: 0, background: 'transparent', textAlign: 'left',
-      }}
-    >
-      <CatIcon catId={e.category} size={36} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>
-          {e.merchant}
+    <div style={{ position: 'relative', overflow: 'hidden' }}>
+      {onDelete && (
+        <button
+          onClick={(ev) => { ev.stopPropagation(); setSwipeX(0); onDelete(); }}
+          style={{
+            position: 'absolute', right: 0, top: 0, bottom: 0, width: DELETE_BTN_WIDTH,
+            background: T.danger, border: 0, cursor: 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+            <path d="M6 5V4a1 1 0 011-1h6a1 1 0 011 1v1M3 5h14M8 9v6M12 9v6M4 5l1 12h10l1-12" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span style={{ color: 'white', fontSize: 11, fontWeight: 700, letterSpacing: '-0.01em' }}>삭제</span>
+        </button>
+      )}
+      <button
+        onClick={handleClick}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+          padding: '14px 20px', cursor: 'pointer', border: 0,
+          background: isOpen ? T.bgSoft : 'transparent',
+          textAlign: 'left', position: 'relative', zIndex: 1,
+          transform: `translateX(-${swipeX}px)`,
+          transition: (swipeX === 0 || swipeX === DELETE_BTN_WIDTH) ? 'transform 0.2s ease, background 0.2s' : 'none',
+        }}
+      >
+        <CatIcon catId={e.category} size={36} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>
+            {e.merchant}
+          </div>
+          <div style={{ fontSize: 12, color: T.textTer, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: cat?.color, fontWeight: 500 }}>{cat?.name}</span>
+            {e.memo && <><span>·</span><span>{e.memo}</span></>}
+            <span>·</span>
+            <span>{e.source === 'ocr' ? 'OCR' : '직접입력'}</span>
+            {e.imageUrl && (
+              <><span>·</span>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <rect x="1" y="2" width="10" height="8" rx="1.5" stroke={T.textTer} strokeWidth="1.2" />
+                  <circle cx="4" cy="5.5" r="1" fill={T.textTer} />
+                  <path d="M1.5 9l2.5-2.5 1.5 1 3-2.5 2 2" stroke={T.textTer} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                </svg>
+              </>
+            )}
+          </div>
         </div>
-        <div style={{ fontSize: 12, color: T.textTer, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ color: cat?.color, fontWeight: 500 }}>{cat?.name}</span>
-          {e.memo && <><span>·</span><span>{e.memo}</span></>}
-          <span>·</span>
-          <span>{e.source === 'ocr' ? 'OCR' : '직접입력'}</span>
-          {e.imageUrl && (
-            <><span>·</span>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <rect x="1" y="2" width="10" height="8" rx="1.5" stroke={T.textTer} strokeWidth="1.2" />
-                <circle cx="4" cy="5.5" r="1" fill={T.textTer} />
-                <path d="M1.5 9l2.5-2.5 1.5 1 3-2.5 2 2" stroke={T.textTer} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-              </svg>
-            </>
-          )}
+        <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', flexShrink: 0 }}>
+          −{formatWon(e.amount).replace('₩', '₩ ')}
         </div>
-      </div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', flexShrink: 0 }}>
-        −{formatWon(e.amount).replace('₩', '₩ ')}
-      </div>
-    </button>
+      </button>
+    </div>
   );
 }
 

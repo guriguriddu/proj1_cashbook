@@ -215,7 +215,9 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
         }
       } else if (trimmedLine.startsWith('금액:')) {
         const amountStr = trimmedLine.replace('금액:', '').trim()
-        amount = parseInt(amountStr.replace(/[^0-9]/g, '')) || 0
+        const isNeg = amountStr.startsWith('-')
+        const absVal = parseInt(amountStr.replace(/[^0-9]/g, '')) || 0
+        amount = isNeg ? -absVal : absVal
       } else if (trimmedLine.startsWith('사용처:')) {
         merchant = trimmedLine.replace('사용처:', '').trim()
       } else if (trimmedLine.startsWith('카테고리:')) {
@@ -226,10 +228,11 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
       }
     }
 
-    if (amount > 0 && merchant) {
+    if (amount !== 0 && merchant) {
+      const absAmount = Math.abs(amount)
+      const isNegative = amount < 0
       const { excluded, reason } = isExcludedTransaction(merchant)
 
-      // Gemini가 분류한 카테고리 사용, 없으면 키워드 기반 분류
       let finalCategory = category
       let confidence = 0.9
       if (!finalCategory) {
@@ -241,12 +244,12 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
       transactions.push({
         id: generateId(),
         date,
-        amount,
+        amount: absAmount,
         merchant,
-        suggestedCategory: excluded ? 'exclude' : finalCategory,
+        suggestedCategory: (excluded || isNegative) ? 'exclude' : finalCategory,
         confidence,
-        isExcluded: excluded,
-        excludeReason: reason,
+        isExcluded: excluded || isNegative,
+        excludeReason: isNegative ? '결제 취소됨' : reason,
         rawText: block.trim(),
       })
     }

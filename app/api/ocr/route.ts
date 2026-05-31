@@ -85,7 +85,7 @@ food, cafe, shopping, transport, fixed, telecom, insurance, education, travel, c
 
 출력 형식 (항목마다 반복):
 날짜: YYYY-MM-DD
-금액: 숫자만
+금액: 숫자만 (취소/역발행/음수 금액은 앞에 - 붙임, 예: -30100)
 사용처: 상호명
 카테고리: other
 ---

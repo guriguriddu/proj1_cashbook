@@ -118,35 +118,42 @@ export default function OCRReviewPage() {
       }
     });
 
-    // 1-pre. 가승인/선승인/임시승인 항목 무조건 제외 (음수 쌍이 없어도)
-    const PREAUTH_KEYWORDS = ['가승인', '선승인', '임시승인'];
-    items.forEach((item) => {
-      if (!item.excluded && PREAUTH_KEYWORDS.some(kw => item.merchant.includes(kw))) {
-        item.excluded = true;
-        item.excludeReason = '가승인 (임시 승인)';
+    // 1-pre. 음수 취소 항목의 양수 원본 찾아서 함께 "결제 최종 취소됨"으로 제외
+    const cancelledItems = items.filter(i => i.excluded && i.excludeReason === '결제 취소됨');
+    cancelledItems.forEach((cancelItem) => {
+      const original = items.find(
+        i => !i.excluded &&
+             i.amount === cancelItem.amount &&
+             i.merchant.trim().toLowerCase() === cancelItem.merchant.trim().toLowerCase() &&
+             i.date === cancelItem.date
+      );
+      if (original) {
+        original.excluded = true;
+        original.excludeReason = '결제 최종 취소됨';
+        cancelItem.excludeReason = '결제 최종 취소됨';
       }
     });
 
     // 1. 추출 내 중복 감지: 같은 날짜 + 같은 금액 + 같은 사용처
+    const PREAUTH_KEYWORDS = ['가승인', '선승인', '임시승인'];
     const seen = new Map<string, string>(); // key -> first item id
     items.forEach((item) => {
+      if (item.excluded) return; // 이미 제외된 항목 스킵
       const key = `${item.date}_${item.amount}_${item.merchant.trim().toLowerCase()}`;
       if (seen.has(key)) {
         item.isDuplicate = true;
         item.duplicateOf = seen.get(key);
-        // 가승인 쌍: 원본도 함께 제외됨 처리
         const isPreauthPair = PREAUTH_KEYWORDS.some(kw => item.merchant.includes(kw));
         if (isPreauthPair) {
           item.excluded = true;
-          item.excludeReason = '가승인 취소';
+          item.excludeReason = '결제 최종 취소됨';
           const original = items.find(i => i.id === item.duplicateOf);
           if (original) {
             original.excluded = true;
-            original.excludeReason = '가승인 취소';
+            original.excludeReason = '결제 최종 취소됨';
             original.isDuplicate = false;
           }
         } else {
-          // 일반 중복: 원본에 카운트 기록
           const original = items.find(i => i.id === item.duplicateOf);
           if (original) {
             original.removedDuplicateCount = (original.removedDuplicateCount || 0) + 1;

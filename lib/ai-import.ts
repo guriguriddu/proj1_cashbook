@@ -58,19 +58,11 @@ export async function parseFileWithAI(
       selected: true,
     };
 
-    const PREAUTH_KEYWORDS = ['가승인', '선승인', '임시승인'];
-    const isPreauth = PREAUTH_KEYWORDS.some(kw => row.merchant.includes(kw));
-
-    if (isPreauth) {
-      row.status = 'excluded' as const;
-      row.selected = false;
-      row.excludeReason = '가승인 (임시 승인)';
-      excluded.push(row);
-    } else if (t.amount < 0) {
+    if (t.amount < 0) {
       // 음수 금액 = 취소·환불·역발행 → 제외됨으로 분류
       row.status = 'excluded' as const;
       row.selected = false;
-      row.excludeReason = '취소/환불 항목';
+      row.excludeReason = '결제 취소됨';
       excluded.push(row);
     } else {
       included.push(row);
@@ -78,6 +70,7 @@ export async function parseFileWithAI(
   }
 
   // 쌍 상쇄 감지: 동일 금액·가맹점 양수/음수 쌍이 있으면 양수 항목도 제외됨으로 이동
+  // 음수 항목의 레이블도 "결제 최종 취소됨"으로 업데이트
   const cancelSet = new Set(excluded.map(r => `${r.date}|${r.merchant}|${r.amount}`));
   const parsed: ParsedRow[] = [];
   for (const row of included) {
@@ -85,8 +78,11 @@ export async function parseFileWithAI(
     if (cancelSet.has(key)) {
       row.status = 'excluded' as const;
       row.selected = false;
-      row.excludeReason = '취소/환불 상쇄 항목';
+      row.excludeReason = '결제 최종 취소됨';
       excluded.push(row);
+      // 음수 원본도 레이블 업데이트
+      const cancelOrigin = excluded.find(r => `${r.date}|${r.merchant}|${r.amount}` === key && r.excludeReason === '결제 취소됨');
+      if (cancelOrigin) cancelOrigin.excludeReason = '결제 최종 취소됨';
     } else {
       parsed.push(row);
     }

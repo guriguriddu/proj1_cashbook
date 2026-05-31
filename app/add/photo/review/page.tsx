@@ -99,22 +99,18 @@ export default function OCRReviewPage() {
       excluded: t.isExcluded || false,
     }));
 
-    // 0. 기존 DB 데이터와 중복 확인
-    const existingKeys = new Set(
-      existingExpenses.map((e) => `${e.date}_${e.amount}_${e.merchant.trim().toLowerCase()}`)
-    );
+    // 0. 기존 DB 데이터와 중복 확인 (유사 merchant 이름 포함)
+    const normMerchant = (s: string) => s.trim().toLowerCase().replace(/[\s()]/g, '').replace(/주식회사|㈜/g, '');
     items.forEach((item) => {
-      const key = `${item.date}_${item.amount}_${item.merchant.trim().toLowerCase()}`;
-      if (existingKeys.has(key)) {
+      const existingItem = existingExpenses.find((e) => {
+        if (e.date !== item.date || e.amount !== item.amount) return false;
+        const na = normMerchant(e.merchant);
+        const nb = normMerchant(item.merchant);
+        return na === nb || na.includes(nb) || nb.includes(na);
+      });
+      if (existingItem) {
         item.isExistingDuplicate = true;
-        // 기존 내역 ID 찾기
-        const existingItem = existingExpenses.find(
-          (e) => e.date === item.date && e.amount === item.amount &&
-                 e.merchant.trim().toLowerCase() === item.merchant.trim().toLowerCase()
-        );
-        if (existingItem) {
-          item.existingExpenseId = existingItem.id;
-        }
+        item.existingExpenseId = existingItem.id;
       }
     });
 

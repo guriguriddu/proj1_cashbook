@@ -229,13 +229,12 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
     if (amount > 0 && merchant) {
       const { excluded, reason } = isExcludedTransaction(merchant)
 
-      let finalCategory = category
-      let confidence = 0.9
-      if (!finalCategory) {
-        const suggestion = suggestCategory(merchant)
-        finalCategory = suggestion.categoryId
-        confidence = suggestion.confidence
-      }
+      // Gemini가 'other'를 반환해도 키워드 기반 재분류 시도
+      const suggestion = suggestCategory(merchant)
+      const finalCategory = (suggestion.categoryId !== 'other' && suggestion.categoryId !== 'exclude')
+        ? suggestion.categoryId
+        : (category || 'other')
+      const confidence = suggestion.categoryId !== 'other' ? suggestion.confidence : 0.9
 
       transactions.push({
         id: generateId(),

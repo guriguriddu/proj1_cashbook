@@ -263,6 +263,9 @@ export default function OCRReviewPage() {
       if (matchingPayment) {
         transfer.linkedPaymentId = matchingPayment.id;
         matchingPayment.linkedTransferId = transfer.id;
+        // Case A: 실제 결제 발견 → 충전 자동 제외
+        transfer.excluded = true;
+        transfer.excludeReason = '실제 결제와 연결 (충전 자동 제외)';
       }
     });
 
@@ -571,7 +574,7 @@ export default function OCRReviewPage() {
                   <svg width="14" height="14" viewBox="0 0 14 14">
                     <path d="M7 1l6.5 11.5h-13L7 1zM7 5.5v3M7 10.5v.5" stroke="#92400E" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                   </svg>
-                  {transferCount}건 간편결제 이체 - 자동충전 포함 가능, 금액 직접 확인 필요
+                  {transferCount}건 충전만 감지됨 — 실제 결제 화면도 함께 올리면 자동으로 처리돼요
                 </div>
               )}
               {linkedTransferCount > 0 && (
@@ -591,7 +594,7 @@ export default function OCRReviewPage() {
                   <svg width="14" height="14" viewBox="0 0 14 14">
                     <path d="M3 7h8M8 4l3 3-3 3" stroke="#059669" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                   </svg>
-                  {linkedTransferCount / 2}건 충전→결제 연결 - 충전 제외 권장
+                  {linkedTransferCount / 2}건 충전이 실제 결제와 연결 — 충전 자동 제외됐어요
                 </div>
               )}
               {needsReviewCount > 0 && (
@@ -1205,7 +1208,7 @@ function OCRRow({
               </span>
             )}
             {!isInvalid && hasCancelMatch && <Badge tone="purple" size="sm">{item.isCancellation ? '취소' : '취소됨'}</Badge>}
-            {!isInvalid && item.isPaymentTransfer && <Badge tone="warn" size="sm">금액확인</Badge>}
+            {!isInvalid && item.isPaymentTransfer && <Badge tone="warn" size="sm">확인 필요</Badge>}
             {!isInvalid && item.linkedTransferId && <Badge tone="accent" size="sm">연결됨</Badge>}
             {!isInvalid && item.dutchPay && (
               <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: '#EEF2FF', color: '#4F46E5', border: '1px solid #C7D2FE' }}>
@@ -1315,28 +1318,28 @@ function EditTxnSheet({
   return (
     <BottomSheet open onClose={onClose} title="거래 편집" height="80%">
       <div style={{ padding: '0 20px 20px' }}>
-        {/* 간편결제 자동충전 경고 */}
+        {/* 간편결제 충전 안내 */}
         {item.isPaymentTransfer && (
           <div
             style={{
               margin: '16px 0 4px',
-              padding: '10px 14px',
+              padding: '12px 14px',
               background: 'rgba(245,158,11,0.12)',
               borderRadius: 10,
               fontSize: 12,
               color: '#92400E',
               fontWeight: 500,
-              lineHeight: 1.5,
-              display: 'flex',
-              gap: 8,
-              alignItems: 'flex-start',
+              lineHeight: 1.6,
             }}
           >
-            <span style={{ flexShrink: 0 }}>⚠️</span>
-            <span>
-              PAYCO·카카오페이 등 간편결제 이체는 <strong>자동충전 금액이 포함</strong>될 수 있어요.
-              실제 사용한 금액으로 직접 수정해주세요.
-            </span>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>실제 결제 금액 확인 필요</div>
+            <div>
+              이 항목은 카카오페이·네이버페이 등 <strong>간편결제 지갑으로 충전</strong>한 내역이에요.
+            </div>
+            <div style={{ marginTop: 4 }}>
+              · 실제 결제 화면도 같이 올렸다면 → 충전 항목은 <strong>제외</strong>해주세요<br/>
+              · 실제 결제 화면이 없다면 → 충전 금액을 <strong>실 사용 금액으로 수정</strong>해주세요
+            </div>
           </div>
         )}
 

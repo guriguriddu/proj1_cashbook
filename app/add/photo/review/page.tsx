@@ -243,7 +243,13 @@ export default function OCRReviewPage() {
         /내\s*\S*계좌/.test(textToCheck) ||
         textToCheck.includes('→');
 
-      if (hasPaymentKeyword && hasTransferContext) {
+      // 폴백: 사용처가 순수 페이 서비스 이름 그 자체 (카카오페이, 네이버페이 등)
+      // Gemini가 화살표를 생략했을 때도 충전 감지
+      const isPurePayServiceName = PAYMENT_TRANSFER_KEYWORDS.some(
+        (kw) => item.merchant.trim().toLowerCase() === kw.toLowerCase()
+      );
+
+      if (hasPaymentKeyword && (hasTransferContext || isPurePayServiceName)) {
         item.isPaymentTransfer = true;
       }
     });

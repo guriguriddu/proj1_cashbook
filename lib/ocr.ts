@@ -215,7 +215,9 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
         }
       } else if (trimmedLine.startsWith('금액:')) {
         const amountStr = trimmedLine.replace('금액:', '').trim()
-        amount = parseInt(amountStr.replace(/[^0-9]/g, '')) || 0
+        const isNeg = amountStr.startsWith('-')
+        const absVal = parseInt(amountStr.replace(/[^0-9]/g, '')) || 0
+        amount = isNeg ? -absVal : absVal
       } else if (trimmedLine.startsWith('사용처:')) {
         merchant = trimmedLine.replace('사용처:', '').trim()
       } else if (trimmedLine.startsWith('카테고리:')) {
@@ -226,10 +228,11 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
       }
     }
 
-    if (amount > 0 && merchant) {
+    if (amount !== 0 && merchant) {
+      const isRefund = amount < 0
+      const absAmount = Math.abs(amount)
       const { excluded, reason } = isExcludedTransaction(merchant)
 
-      // Gemini가 'other'를 반환해도 키워드 기반 재분류 시도
       const suggestion = suggestCategory(merchant)
       const finalCategory = (suggestion.categoryId !== 'other' && suggestion.categoryId !== 'exclude')
         ? suggestion.categoryId
@@ -239,12 +242,12 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
       transactions.push({
         id: generateId(),
         date,
-        amount,
+        amount: absAmount,
         merchant,
-        suggestedCategory: excluded ? 'exclude' : finalCategory,
+        suggestedCategory: (excluded || isRefund) ? 'exclude' : finalCategory,
         confidence,
-        isExcluded: excluded,
-        excludeReason: reason,
+        isExcluded: excluded || isRefund,
+        excludeReason: isRefund ? '환불/취소 항목' : reason,
         rawText: block.trim(),
       })
     }

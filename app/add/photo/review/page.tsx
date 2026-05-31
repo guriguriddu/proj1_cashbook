@@ -67,6 +67,13 @@ const PAYMENT_TRANSFER_KEYWORDS = [
   '캐시비',
 ];
 
+// Gemini가 사용처를 페이 서비스 이름만으로 출력했을 때 exact match용 (더 넓게 포함)
+const PURE_PAY_SERVICE_NAMES = [
+  ...PAYMENT_TRANSFER_KEYWORDS,
+  '무신사', '카카오', '네이버', '토스페이', // 축약 출력 대응
+  '하나→카카오페이', 'kb→네이버페이', '하나→무신사머니', // 화살표 보존 케이스
+];
+
 // 은행 이체 키워드
 const BANK_TRANSFER_KEYWORDS = ['이체', '송금', '충전', '입금'];
 
@@ -243,9 +250,8 @@ export default function OCRReviewPage() {
         /내\s*\S*계좌/.test(textToCheck) ||
         textToCheck.includes('→');
 
-      // 폴백: 사용처가 순수 페이 서비스 이름 그 자체 (카카오페이, 네이버페이 등)
-      // Gemini가 화살표를 생략했을 때도 충전 감지
-      const isPurePayServiceName = PAYMENT_TRANSFER_KEYWORDS.some(
+      // 폴백: 사용처가 순수 페이 서비스 이름 (Gemini가 화살표 생략해도 감지)
+      const isPurePayServiceName = PURE_PAY_SERVICE_NAMES.some(
         (kw) => item.merchant.trim().toLowerCase() === kw.toLowerCase()
       );
 

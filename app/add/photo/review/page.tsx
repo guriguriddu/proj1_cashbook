@@ -25,6 +25,7 @@ interface ReviewItem extends ExtractedTransaction {
   excluded: boolean;
   isDuplicate?: boolean;      // 중복 의심 (추출 내 중복)
   duplicateOf?: string;       // 중복 원본 ID
+  removedDuplicateCount?: number; // 이 항목에서 제거된 중복 수
   isExistingDuplicate?: boolean;  // DB에 이미 존재하는 내역
   existingExpenseId?: string;     // 기존 DB 내역 ID
   isCancellation?: boolean;   // 취소 내역
@@ -118,12 +119,31 @@ export default function OCRReviewPage() {
     });
 
     // 1. 추출 내 중복 감지: 같은 날짜 + 같은 금액 + 같은 사용처
+    const PREAUTH_KEYWORDS = ['가승인', '선승인', '임시승인'];
     const seen = new Map<string, string>(); // key -> first item id
     items.forEach((item) => {
       const key = `${item.date}_${item.amount}_${item.merchant.trim().toLowerCase()}`;
       if (seen.has(key)) {
         item.isDuplicate = true;
         item.duplicateOf = seen.get(key);
+        // 가승인 쌍: 원본도 함께 제외됨 처리
+        const isPreauthPair = PREAUTH_KEYWORDS.some(kw => item.merchant.includes(kw));
+        if (isPreauthPair) {
+          item.excluded = true;
+          item.excludeReason = '가승인 취소';
+          const original = items.find(i => i.id === item.duplicateOf);
+          if (original) {
+            original.excluded = true;
+            original.excludeReason = '가승인 취소';
+            original.isDuplicate = false;
+          }
+        } else {
+          // 일반 중복: 원본에 카운트 기록
+          const original = items.find(i => i.id === item.duplicateOf);
+          if (original) {
+            original.removedDuplicateCount = (original.removedDuplicateCount || 0) + 1;
+          }
+        }
       } else {
         seen.set(key, item.id);
       }
@@ -634,15 +654,15 @@ export default function OCRReviewPage() {
                     textDecoration: 'line-through',
                   }}
                 >
-                  <span
-                    style={{
-                      flex: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {it.merchant}
+                  <span style={{ flex: 1, overflow: 'hidden' }}>
+                    <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {it.merchant}
+                    </span>
+                    {it.excludeReason && (
+                      <span style={{ fontSize: 10, color: T.textTer, textDecoration: 'none', fontWeight: 500 }}>
+                        {it.excludeReason}
+                      </span>
+                    )}
                   </span>
                   <span style={{ fontVariantNumeric: 'tabular-nums' }}>
                     ₩{it.amount.toLocaleString('ko-KR')}
@@ -930,6 +950,7 @@ function OCRRow({
   const needsReview = item.confidence && item.confidence < 0.8;
   const hasCancelMatch = item.cancelledBy || item.cancels;
   const hasDuplicateIssue = item.isExistingDuplicate || item.isDuplicate;
+  const hasDedupedItems = (item.removedDuplicateCount || 0) > 0;
   const isInvalid = !item.amount || item.amount === 0 || !item.merchant || !item.date;
 
   // 배경색 및 테두리 결정
@@ -1002,10 +1023,15 @@ function OCRRow({
             </div>
             {isInvalid && <Badge tone="danger" size="sm">입력필요</Badge>}
             {!isInvalid && item.isExistingDuplicate && <Badge tone="blue" size="sm">기존</Badge>}
+            {!isInvalid && hasDedupedItems && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: '#F3F4F6', color: '#6B7280', border: '1px solid #E5E7EB' }}>
+                중복 {item.removedDuplicateCount}건 제거
+              </span>
+            )}
             {!isInvalid && hasCancelMatch && <Badge tone="purple" size="sm">{item.isCancellation ? '취소' : '취소됨'}</Badge>}
             {!isInvalid && item.isPaymentTransfer && <Badge tone="warn" size="sm">금액확인</Badge>}
             {!isInvalid && item.linkedTransferId && <Badge tone="accent" size="sm">연결됨</Badge>}
-            {!isInvalid && needsReview && !hasCancelMatch && !item.isExistingDuplicate && !item.isPaymentTransfer && <Badge tone="warn" size="sm">확인</Badge>}
+            {!isInvalid && needsReview && !hasCancelMatch && !item.isExistingDuplicate && !item.isPaymentTransfer && !hasDedupedItems && <Badge tone="warn" size="sm">확인</Badge>}
           </div>
           <div
             style={{

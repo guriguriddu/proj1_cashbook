@@ -37,7 +37,7 @@ export default function InvestPage() {
 
   const laborIncome = investSettings.annualSalary + investSettings.bonusIncome;
 
-  const [tab, setTab] = useState<Tab>('tax');
+  const [tab, setTab] = useState<Tab>('overview');
   const [taxType, setTaxType] = useState<TaxType>('stock');
 
   // 국장/미장 빠른 세금 계산
@@ -116,6 +116,24 @@ export default function InvestPage() {
     const eligible = Math.min(pensionInputs.contribution, 9_000_000);
     const rate = pensionInputs.salaryUnder5500 ? 0.165 : 0.132;
     return { eligible, rate, credit: Math.floor(eligible * rate) };
+  })();
+
+  // 총괄: 각 칩 입력을 합산해 금융소득 종합과세 1회 판정 (단일 풀)
+  const overview = (() => {
+    const interest = depositInputs.interest + bondInputs.coupon;        // 이자 (예금+채권쿠폰)
+    const dividend = divInputs.grossDividend + etfResult.taxableBase;   // 배당 (주식+ETF 분배·기타매매)
+    const totalFinancial = interest + dividend;
+    // 합산 금융소득에 종합과세 1회 적용 (국내 15.4% 기준 근사)
+    const fin = calcDividendTax({ grossDividend: totalFinancial, otherFinancialIncome: 0, laborIncome, isDomestic: true, isHealthInsured: divInputs.isHealthInsured, isPidayang: divInputs.isPidayang });
+    const financialTaxTotal = totalFinancial - fin.netDividend;          // 원천+종합+지방+건보 합
+    const capTaxTotal = capResult.tax + capResult.transactionTax;        // 해외주식 양도세+거래세
+    const totalTax = financialTaxTotal + capTaxTotal;
+    const totalSaving = isaResult.saved + pensionResult.credit;          // ISA 절세 + 연금 세액공제
+    return {
+      interest, dividend, totalFinancial, isComprehensive: fin.isComprehensive,
+      withheld: fin.withheld, comprehensiveTax: fin.comprehensiveTax, localTax: fin.localTax, healthIns: fin.healthIns,
+      financialTaxTotal, capTaxTotal, totalTax, totalSaving,
+    };
   })();
 
   const fieldDefs: Record<string, {
@@ -291,8 +309,52 @@ export default function InvestPage() {
         {/* ── 총괄 탭 ── */}
         {tab === 'overview' && (
           <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* 요약 카드 */}
+            <div style={{ background: T.text, borderRadius: 18, padding: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
+                연간 금융소득 (이자+배당)
+              </div>
+              <div style={{ fontSize: 30, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 8 }}>
+                {formatWon(overview.totalFinancial)}
+              </div>
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
+                background: overview.isComprehensive ? 'rgba(248,113,113,0.2)' : 'rgba(52,211,153,0.2)',
+                color: overview.isComprehensive ? '#FCA5A5' : '#6EE7B7',
+              }}>
+                {overview.isComprehensive ? '종합과세 대상 (2천만 초과)' : '분리과세 (2천만 이하)'}
+              </span>
+            </div>
+
+            <SectionCard title="금융소득 합산">
+              <ResultRow label="이자 (예금·적금 + 채권 쿠폰)" value={formatWon(overview.interest)} />
+              <ResultRow label="배당 (주식 + ETF 분배·기타매매)" value={formatWon(overview.dividend)} />
+              <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+              <ResultRow label="합계 금융소득" value={formatWon(overview.totalFinancial)} big />
+            </SectionCard>
+
+            <SectionCard title="예상 세금">
+              <ResultRow label="원천징수 (15.4%)" value={formatWon(overview.withheld)} color={T.danger} />
+              {overview.comprehensiveTax > 0 && <ResultRow label="종합소득세 추가납부" value={formatWon(overview.comprehensiveTax)} color={T.danger} />}
+              {overview.localTax > 0 && <ResultRow label="지방소득세" value={formatWon(overview.localTax)} color={T.danger} />}
+              {overview.healthIns > 0 && <ResultRow label="건보료 추가분" value={formatWon(overview.healthIns)} color={T.warn} />}
+              {overview.capTaxTotal > 0 && <ResultRow label="해외주식 양도세 + 거래세" value={formatWon(overview.capTaxTotal)} color={T.danger} />}
+              <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+              <ResultRow label="총 예상 세금" value={formatWon(overview.totalTax)} color={T.danger} big />
+            </SectionCard>
+
+            {overview.totalSaving > 0 && (
+              <SectionCard title="절세 (환급)">
+                {isaResult.saved > 0 && <ResultRow label="ISA 일반계좌 대비 절세" value={formatWon(isaResult.saved)} color={T.accent} />}
+                {pensionResult.credit > 0 && <ResultRow label="연금저축·IRP 세액공제 (환급)" value={formatWon(pensionResult.credit)} color={T.accent} />}
+                <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                <ResultRow label="총 절세·환급" value={formatWon(overview.totalSaving)} color={T.accent} big />
+              </SectionCard>
+            )}
+
             <InfoBanner tone="neutral">
-              총괄장은 곧 추가됩니다. 예금·주식·채권 등 금융소득을 합산해 종합과세 여부와 총 세금을 한눈에 보여줄 예정이에요.
+              각 <b>세금 계산</b> 칩(예금·주식·ETF·채권·절세)에서 입력한 값을 합산해 금융소득 종합과세를 <b>한 번에</b> 판정했어요.
+              상단 <b>세전 소득</b> 버튼에 근로소득을 넣으면 종합과세 계산이 더 정확해져요.
             </InfoBanner>
           </div>
         )}

@@ -118,7 +118,8 @@ function calcCapitalGainTax(params: {
   market: 'kospi' | 'kosdaq' | 'overseas';
 }): CapGainResult {
   const { gain, salePrice, isDomestic, isMajorShareholder, market } = params;
-  const txTaxRate = market === 'kospi' ? 0.0015 : market === 'kosdaq' ? 0.002 : 0;
+  // 증권거래세(농특세 포함): 2025년부터 코스피·코스닥 모두 0.15%. 해외는 없음.
+  const txTaxRate = market === 'kospi' ? 0.0015 : market === 'kosdaq' ? 0.0015 : 0;
   const transactionTax = Math.floor(salePrice * txTaxRate);
 
   if (isDomestic && !isMajorShareholder) {

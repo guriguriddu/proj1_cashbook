@@ -273,20 +273,26 @@ export default function OCRReviewPage() {
     const actualPayments = items.filter((i) => !i.isPaymentTransfer && !i.isCancellation && !i.excluded);
 
     transfers.forEach((transfer) => {
-      // 같은 금액의 결제 내역 찾기 (충전 이후 날짜, 아직 연결 안된 것)
+      // 같은 금액의 "실제 결제"를 찾아 연결한다.
+      // 단, 우연한 동일 금액(흔한 100,000원 등)으로 충전이 잘못 제외되면
+      // 지출이 조용히 사라져 과소집계되므로, 매칭을 보수적으로 잡는다:
+      //  - 같은 날짜에 일어난 결제만 (먼 미래의 우연한 동일 금액 배제)
+      //  - 타인 송금/이체는 '결제'로 보지 않음 (실제 가맹점 결제만 인정)
       const matchingPayment = actualPayments.find(
         (p) =>
           p.amount === transfer.amount &&
-          !p.linkedTransferId && // 아직 매칭 안된 것
-          p.date >= transfer.date // 결제가 충전 이후
+          !p.linkedTransferId && // 아직 연결 안된 것
+          p.date === transfer.date && // 같은 날 결제만
+          !/송금|이체/.test(p.merchant) // 타인 송금/이체 제외
       );
       if (matchingPayment) {
         transfer.linkedPaymentId = matchingPayment.id;
         matchingPayment.linkedTransferId = transfer.id;
-        // Case A: 실제 결제 발견 → 충전 자동 제외
+        // Case A: 같은 날 실제 결제 발견 → 충전 자동 제외 (중복 방지)
         transfer.excluded = true;
         transfer.excludeReason = '실제 결제와 연결 (충전 자동 제외)';
       }
+      // 매칭이 없으면 transfer 는 그대로 isPaymentTransfer(확인 필요) 로 남는다.
     });
 
     // 6. n빵 감지: 식비/카페 15,000원 이상 + 타인 입금 패턴

@@ -120,8 +120,8 @@ export default function InvestSimulation() {
         <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5 }}>세후 예상 수익과 목표 달성에 필요한 수익률을 계산해요</div>
       </div>
 
-      {/* 모드 세그먼트 */}
-      <div style={{ padding: '8px 20px 4px' }}>
+      {/* sticky 헤더: 모드 토글 + (forward 결과) — 스크롤해도 고정 */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: T.bg, padding: '8px 20px 12px', boxShadow: '0 8px 16px -8px rgba(10,13,20,0.14)' }}>
         <div style={{ display: 'flex', background: T.bgSoft, borderRadius: 10, padding: 3, border: `1px solid ${T.divider}` }}>
           {([
             { id: 'forward' as SimMode, label: '💰 얼마가 될까' },
@@ -142,27 +142,24 @@ export default function InvestSimulation() {
             </button>
           ))}
         </div>
+
+        {simMode === 'forward' && (
+          <div style={{ marginTop: 10, background: T.text, borderRadius: 18, padding: '14px 20px' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 5 }}>
+              {sim.years}년 후 세후 평가액
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 3 }}>
+              {formatWon(simResult.finalBalance)}
+            </div>
+            <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+              실질 연평균 수익률 {simResult.effectiveAnnualReturn.toFixed(1)}% (세후)
+            </div>
+          </div>
+        )}
       </div>
 
       {simMode === 'forward' && (
         <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* 결과 — 상단 sticky 고정 */}
-          <div style={{
-            position: 'sticky', top: 0, zIndex: 5,
-            background: T.text, borderRadius: 18, padding: '16px 20px',
-            boxShadow: '0 6px 20px rgba(10,13,20,0.18)',
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
-              {sim.years}년 후 세후 평가액
-            </div>
-            <div style={{ fontSize: 30, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 3 }}>
-              {formatWon(simResult.finalBalance)}
-            </div>
-            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
-              실질 연평균 수익률 {simResult.effectiveAnnualReturn.toFixed(1)}% (세후)
-            </div>
-          </div>
-
           {/* 국내 주식 */}
           <SectionCard title="🇰🇷 국내 주식 (양도세 비과세·소액주주)">
             <InputRow label="초기 투자금" value={formatWon(sim.krPrincipal)} onTap={() => setEditingField('krPrincipal')} />
@@ -195,26 +192,6 @@ export default function InvestSimulation() {
             <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
             <ResultRow label="세후 총 수익" value={formatWon(simResult.totalReturn)} color={T.accent} big />
           </SectionCard>
-
-          <button
-            onClick={() => setSimMode('goal')}
-            style={{
-              border: `1px solid ${T.divider}`, background: T.bg, borderRadius: 14, padding: '14px 16px',
-              cursor: 'pointer', width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: T.text, letterSpacing: '-0.01em', marginBottom: 2 }}>
-                🎯 목표 역산으로 확인
-              </div>
-              <div style={{ fontSize: 12, color: T.textSec, fontWeight: 500 }}>
-                목표 달성을 위해 필요한 수익률 계산
-              </div>
-            </div>
-            <svg width="6" height="10" viewBox="0 0 6 10" fill="none">
-              <path d="M1 1l4 4-4 4" stroke={T.textTer} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
 
           <InfoBanner tone="neutral">
             배당은 매월 재투자하는 것으로 계산해요. 국내는 양도세 비과세(소액주주), 해외는 양도차익 250만 공제 후 22% 적용. 실제 세금은 소득 상황에 따라 달라질 수 있어요.

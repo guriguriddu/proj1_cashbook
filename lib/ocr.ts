@@ -262,6 +262,21 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
 // OCR 진행 상태 콜백 타입
 export type OcrProgressCallback = (progress: number, status: string) => void
 
+// 응답 실패를 사람이 읽을 수 있는 에러로 변환.
+// 504 등에서 서버가 JSON 이 아닌 텍스트(HTML)를 돌려줄 때 .json() 이 터지는 걸 막는다.
+async function toFriendlyError(response: Response, fallback: string): Promise<Error> {
+  if (response.status === 504 || response.status === 408) {
+    return new Error('영상이 길어 처리 시간(60초)을 초과했어요. 더 짧게(1분 이내) 나눠서 올려주세요.')
+  }
+  const raw = await response.text()
+  try {
+    const parsed = JSON.parse(raw)
+    return new Error(parsed.error || fallback)
+  } catch {
+    return new Error(`${fallback} (HTTP ${response.status})`)
+  }
+}
+
 // Gemini API를 사용한 OCR
 export async function performOcr(
   imageFile: File,
@@ -330,8 +345,7 @@ export async function performVideoOcr(
     }
 
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || '영상 인식 실패')
+      throw await toFriendlyError(response, '영상 인식 실패')
     }
 
     const data = await response.json()
@@ -371,8 +385,7 @@ export async function performVideoOcrByUrl(
     }
 
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || '영상 인식 실패')
+      throw await toFriendlyError(response, '영상 인식 실패')
     }
 
     const data = await response.json()

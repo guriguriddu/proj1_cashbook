@@ -13,6 +13,10 @@ import {
 import { performVideoOcr, parseGeminiResponse, parseOcrText, OcrProgressCallback } from '@/lib/ocr';
 import type { ExtractedTransaction } from '@/types';
 
+// 배포(Vercel) 서버리스 함수 요청 본문 한도(4.5MB)에 맞춘 업로드 상한.
+// 이보다 크면 운영 사이트에서 413 으로 실패하므로 미리 막는다.
+const MAX_UPLOAD_MB = 4.5;
+
 export default function VideoUploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -28,6 +32,14 @@ export default function VideoUploadPage() {
     const file = files[0];
     if (!file.type.startsWith('video/')) {
       setError('영상 파일을 선택해주세요 (.mp4, .mov 등)');
+      return;
+    }
+    const sizeMb = file.size / (1024 * 1024);
+    if (sizeMb > MAX_UPLOAD_MB) {
+      setError(
+        `영상이 너무 커요 (${sizeMb.toFixed(1)}MB). ${MAX_UPLOAD_MB}MB 이하로 올려주세요.\n` +
+        `· 화면 녹화 화질을 낮추거나 · 기간을 나눠 짧게 녹화하면 용량이 줄어요.`
+      );
       return;
     }
     setError(null);
@@ -94,6 +106,10 @@ export default function VideoUploadPage() {
           <div style={{ fontSize: 14, color: T.textSec, lineHeight: 1.6 }}>
             토스·뱅크 거래내역을 <strong>위에서 아래로 천천히 스크롤하며 화면 녹화</strong>한 영상을
             올리면, 영상 전체에서 거래를 한 번에 추출해드려요.
+            <br />
+            <span style={{ color: T.textTer, fontSize: 13 }}>
+              영상 용량은 <strong>{MAX_UPLOAD_MB}MB 이하</strong> (대략 1~2분 분량)
+            </span>
           </div>
         </div>
 
@@ -146,7 +162,7 @@ export default function VideoUploadPage() {
                 영상 끌어다 놓기
               </div>
               <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5 }}>
-                또는 탭해서 영상 선택 (.mp4 / .mov)
+                또는 탭해서 영상 선택 (.mp4 / .mov · 최대 {MAX_UPLOAD_MB}MB)
               </div>
               <input
                 ref={fileInputRef}
@@ -222,7 +238,7 @@ export default function VideoUploadPage() {
             <div style={{ fontSize: 14, fontWeight: 600, color: T.danger, marginBottom: 4 }}>
               영상 인식 실패
             </div>
-            <div style={{ fontSize: 13, color: T.danger, opacity: 0.85 }}>{error}</div>
+            <div style={{ fontSize: 13, color: T.danger, opacity: 0.85, whiteSpace: 'pre-line' }}>{error}</div>
           </div>
         )}
       </ScreenBody>

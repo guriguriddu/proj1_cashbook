@@ -10,7 +10,40 @@ import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
 
 type SimMode = 'forward' | 'goal';
 
-// 목표 탭 하단에 들어가는 투자 시뮬레이션 섹션 (예전 투자탭에서 이동)
+// 한 종류(국내 또는 해외) 주식 스트림을 시뮬레이션 — 배당 매월 재투자 + 매도 시 양도세
+function simulateStream(p: {
+  principal: number; monthlyAdd: number; annualReturn: number; dividendYield: number;
+  years: number; isDomestic: boolean; isHealthInsured: boolean; isPidayang: boolean; laborIncome: number;
+}) {
+  const { principal, monthlyAdd, annualReturn, dividendYield, years, isDomestic, isHealthInsured, isPidayang, laborIncome } = p;
+  const monthlyRate = annualReturn / 100 / 12;
+  const months = years * 12;
+  let balance = principal;
+  let totalInvested = principal;
+  let totalDivGross = 0;
+  let totalDivNet = 0;
+
+  for (let m = 0; m < months; m++) {
+    balance += monthlyAdd;
+    totalInvested += monthlyAdd;
+    const monthlyDiv = balance * (dividendYield / 100 / 12);
+    const divTax = calcDividendTax({ grossDividend: monthlyDiv, otherFinancialIncome: 0, laborIncome, isDomestic, isHealthInsured, isPidayang });
+    totalDivGross += monthlyDiv;
+    totalDivNet += divTax.netDividend;
+    balance = balance * (1 + monthlyRate - dividendYield / 100 / 12) + divTax.netDividend;
+  }
+
+  const capGainGross = Math.max(0, balance - totalInvested);
+  const capTax = calcCapitalGainTax({
+    gain: capGainGross, salePrice: balance,
+    isDomestic, isMajorShareholder: false, market: isDomestic ? 'kospi' : 'overseas',
+  });
+  const finalBalance = balance - capTax.tax;
+
+  return { totalInvested, totalDivGross, totalDivNet, capGainGross, capGainTax: capTax.tax, finalBalance };
+}
+
+// 목표 탭에서 진입하는 투자 시뮬레이션
 export default function InvestSimulation() {
   const [laborIncome, setLaborIncome] = useState(0);
   useEffect(() => {
@@ -19,81 +52,65 @@ export default function InvestSimulation() {
 
   const [simMode, setSimMode] = useState<SimMode>('forward');
   const [editingField, setEditingField] = useState<string | null>(null);
-  const [simInputs, setSimInputs] = useState({
-    principal: 10_000_000,
-    monthlyAdd: 500_000,
-    annualReturn: 7,
+  const [sim, setSim] = useState({
+    // 국내 주식
+    krPrincipal: 0,
+    krMonthlyAdd: 0,
+    krReturn: 5,
+    krDividend: 2,
+    // 해외 주식
+    usPrincipal: 10_000_000,
+    usMonthlyAdd: 500_000,
+    usReturn: 8,
+    usDividend: 2,
+    // 공통
     years: 10,
-    dividendYield: 3,
-    isDomestic: false,
     isHealthInsured: true,
     isPidayang: false,
   });
 
   const simResult = (() => {
-    const { principal, monthlyAdd, annualReturn, years, dividendYield, isDomestic, isHealthInsured, isPidayang } = simInputs;
-    const monthlyRate = annualReturn / 100 / 12;
-    const months = years * 12;
-    let balance = principal;
-    let totalInvested = principal;
-    let totalDividendGross = 0;
-    let totalDividendNet = 0;
+    const common = { years: sim.years, isHealthInsured: sim.isHealthInsured, isPidayang: sim.isPidayang, laborIncome };
+    const kr = simulateStream({ principal: sim.krPrincipal, monthlyAdd: sim.krMonthlyAdd, annualReturn: sim.krReturn, dividendYield: sim.krDividend, isDomestic: true, ...common });
+    const us = simulateStream({ principal: sim.usPrincipal, monthlyAdd: sim.usMonthlyAdd, annualReturn: sim.usReturn, dividendYield: sim.usDividend, isDomestic: false, ...common });
 
-    for (let m = 0; m < months; m++) {
-      balance += monthlyAdd;
-      totalInvested += monthlyAdd;
-      const monthlyDiv = balance * (dividendYield / 100 / 12);
-      const divTax = calcDividendTax({ grossDividend: monthlyDiv, otherFinancialIncome: 0, laborIncome, isDomestic, isHealthInsured, isPidayang });
-      totalDividendGross += monthlyDiv;
-      totalDividendNet += divTax.netDividend;
-      balance = balance * (1 + monthlyRate - dividendYield / 100 / 12) + divTax.netDividend;
-    }
-
-    const totalCapitalGainGross = Math.max(0, balance - totalInvested);
-    const capTax = calcCapitalGainTax({
-      gain: totalCapitalGainGross,
-      salePrice: balance,
-      isDomestic: simInputs.isDomestic,
-      isMajorShareholder: false,
-      market: simInputs.isDomestic ? 'kospi' : 'overseas',
-    });
-
-    const finalBalance = balance - capTax.tax;
+    const totalInvested = kr.totalInvested + us.totalInvested;
+    const finalBalance = kr.finalBalance + us.finalBalance;
     const totalReturn = finalBalance - totalInvested;
-    const effectiveAnnualReturn = totalInvested > 0 ? (Math.pow(finalBalance / totalInvested, 1 / years) - 1) * 100 : 0;
+    const totalDividendGross = kr.totalDivGross + us.totalDivGross;
+    const totalDividendNet = kr.totalDivNet + us.totalDivNet;
+    const totalCapitalGainGross = kr.capGainGross + us.capGainGross;
+    const capitalGainTax = kr.capGainTax + us.capGainTax;
+    const effectiveAnnualReturn = totalInvested > 0 ? (Math.pow(finalBalance / totalInvested, 1 / sim.years) - 1) * 100 : 0;
 
-    return { totalInvested, finalBalance, totalReturn, totalDividendGross, totalDividendNet, totalCapitalGainGross, capitalGainTax: capTax.tax, effectiveAnnualReturn };
+    return { totalInvested, finalBalance, totalReturn, totalDividendGross, totalDividendNet, totalCapitalGainGross, capitalGainTax, effectiveAnnualReturn };
   })();
+
+  const num = (key: keyof typeof sim) => sim[key] as number;
+  const setNum = (key: keyof typeof sim) => (v: number) => setSim(p => ({ ...p, [key]: v }));
 
   const fieldDefs: Record<string, {
     label: string; value: number; unit: string; step: number; min?: number; max?: number;
     set: (v: number) => void; presets?: { value: number; label: string }[];
   }> = {
-    simPrincipal: {
-      label: '초기 투자금', value: simInputs.principal, unit: '원', step: 1_000_000,
-      set: (v) => setSimInputs(p => ({ ...p, principal: v })),
-      presets: [{ value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }, { value: 30_000_000, label: '3,000만' }, { value: 50_000_000, label: '5,000만' }],
-    },
-    simMonthlyAdd: {
-      label: '월 추가 투자금', value: simInputs.monthlyAdd, unit: '원', step: 100_000,
-      set: (v) => setSimInputs(p => ({ ...p, monthlyAdd: v })),
-      presets: [{ value: 200_000, label: '20만' }, { value: 500_000, label: '50만' }, { value: 1_000_000, label: '100만' }],
-    },
-    simAnnualReturn: {
-      label: '연간 수익률', value: simInputs.annualReturn, unit: '%', step: 1, min: 0, max: 30,
-      set: (v) => setSimInputs(p => ({ ...p, annualReturn: v })),
-      presets: [{ value: 5, label: '5%' }, { value: 7, label: '7%' }, { value: 10, label: '10%' }, { value: 12, label: '12%' }],
-    },
-    simYears: {
-      label: '투자 기간', value: simInputs.years, unit: '년', step: 1, min: 1, max: 40,
-      set: (v) => setSimInputs(p => ({ ...p, years: v })),
-      presets: [{ value: 5, label: '5년' }, { value: 10, label: '10년' }, { value: 20, label: '20년' }, { value: 30, label: '30년' }],
-    },
-    simDividendYield: {
-      label: '배당 수익률', value: simInputs.dividendYield, unit: '%', step: 0.5, min: 0, max: 20,
-      set: (v) => setSimInputs(p => ({ ...p, dividendYield: v })),
-      presets: [{ value: 0, label: '0%' }, { value: 2, label: '2%' }, { value: 3, label: '3%' }, { value: 5, label: '5%' }],
-    },
+    krPrincipal: { label: '국내 초기 투자금', value: num('krPrincipal'), unit: '원', step: 1_000_000, set: setNum('krPrincipal'),
+      presets: [{ value: 0, label: '0' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }, { value: 30_000_000, label: '3,000만' }] },
+    krMonthlyAdd: { label: '국내 월 추가 투자', value: num('krMonthlyAdd'), unit: '원', step: 100_000, set: setNum('krMonthlyAdd'),
+      presets: [{ value: 0, label: '0' }, { value: 200_000, label: '20만' }, { value: 500_000, label: '50만' }, { value: 1_000_000, label: '100만' }] },
+    krReturn: { label: '국내 연간 수익률', value: num('krReturn'), unit: '%', step: 1, min: 0, max: 30, set: setNum('krReturn'),
+      presets: [{ value: 3, label: '3%' }, { value: 5, label: '5%' }, { value: 7, label: '7%' }, { value: 10, label: '10%' }] },
+    krDividend: { label: '국내 배당 수익률', value: num('krDividend'), unit: '%', step: 0.5, min: 0, max: 20, set: setNum('krDividend'),
+      presets: [{ value: 0, label: '0%' }, { value: 2, label: '2%' }, { value: 3, label: '3%' }, { value: 5, label: '5%' }] },
+    usPrincipal: { label: '해외 초기 투자금', value: num('usPrincipal'), unit: '원', step: 1_000_000, set: setNum('usPrincipal'),
+      presets: [{ value: 0, label: '0' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }, { value: 30_000_000, label: '3,000만' }] },
+    usMonthlyAdd: { label: '해외 월 추가 투자', value: num('usMonthlyAdd'), unit: '원', step: 100_000, set: setNum('usMonthlyAdd'),
+      presets: [{ value: 0, label: '0' }, { value: 200_000, label: '20만' }, { value: 500_000, label: '50만' }, { value: 1_000_000, label: '100만' }] },
+    usReturn: { label: '해외 연간 수익률', value: num('usReturn'), unit: '%', step: 1, min: 0, max: 30, set: setNum('usReturn'),
+      presets: [{ value: 7, label: '7%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' }, { value: 14, label: '14%' }] },
+    usDividend: { label: '해외 배당 수익률', value: num('usDividend'), unit: '%', step: 0.5, min: 0, max: 20, set: setNum('usDividend'),
+      presets: [{ value: 0, label: '0%' }, { value: 1.5, label: '1.5%' }, { value: 2, label: '2%' }, { value: 4, label: '4%' }] },
+    simYears: { label: '투자 기간', value: num('years'), unit: '년', step: 1, min: 1, max: 40, set: setNum('years'),
+      presets: [{ value: 5, label: '5년' }, { value: 10, label: '10년' }, { value: 20, label: '20년' }, { value: 30, label: '30년' }] },
   };
 
   return (
@@ -129,14 +146,14 @@ export default function InvestSimulation() {
 
       {simMode === 'forward' && (
         <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* 결과 — 상단 sticky 고정 (입력 바꿀 때 바로 보이도록) */}
+          {/* 결과 — 상단 sticky 고정 */}
           <div style={{
             position: 'sticky', top: 0, zIndex: 5,
             background: T.text, borderRadius: 18, padding: '16px 20px',
             boxShadow: '0 6px 20px rgba(10,13,20,0.18)',
           }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
-              {simInputs.years}년 후 세후 평가액
+              {sim.years}년 후 세후 평가액
             </div>
             <div style={{ fontSize: 30, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 3 }}>
               {formatWon(simResult.finalBalance)}
@@ -146,23 +163,35 @@ export default function InvestSimulation() {
             </div>
           </div>
 
-          <SectionCard title="투자 조건">
-            <InputRow label="초기 투자금" value={formatWon(simInputs.principal)} onTap={() => setEditingField('simPrincipal')} />
-            <InputRow label="월 추가 투자" value={formatWon(simInputs.monthlyAdd)} onTap={() => setEditingField('simMonthlyAdd')} />
-            <InputRow label="연간 수익률" value={`${simInputs.annualReturn}%`} onTap={() => setEditingField('simAnnualReturn')} />
-            <InputRow label="배당 수익률" value={`${simInputs.dividendYield}%`} onTap={() => setEditingField('simDividendYield')} />
-            <InputRow label="투자 기간" value={`${simInputs.years}년`} onTap={() => setEditingField('simYears')} />
-            <ToggleRow label="국내 주식" value={simInputs.isDomestic} onChange={v => setSimInputs(p => ({ ...p, isDomestic: v }))} />
-            <ToggleRow label="직장 건강보험" value={simInputs.isHealthInsured} onChange={v => setSimInputs(p => ({ ...p, isHealthInsured: v }))} />
-            <ToggleRow label="피부양자" value={simInputs.isPidayang} onChange={v => setSimInputs(p => ({ ...p, isPidayang: v }))} noBorder />
+          {/* 국내 주식 */}
+          <SectionCard title="🇰🇷 국내 주식 (양도세 비과세·소액주주)">
+            <InputRow label="초기 투자금" value={formatWon(sim.krPrincipal)} onTap={() => setEditingField('krPrincipal')} />
+            <InputRow label="월 추가 투자" value={formatWon(sim.krMonthlyAdd)} onTap={() => setEditingField('krMonthlyAdd')} />
+            <InputRow label="연간 수익률" value={`${sim.krReturn}%`} onTap={() => setEditingField('krReturn')} />
+            <InputRow label="배당 수익률" value={`${sim.krDividend}%`} onTap={() => setEditingField('krDividend')} noBorder />
           </SectionCard>
 
-          <SectionCard title="수익 내역">
+          {/* 해외 주식 */}
+          <SectionCard title="🌎 해외 주식 (양도세 22%·250만 공제)">
+            <InputRow label="초기 투자금" value={formatWon(sim.usPrincipal)} onTap={() => setEditingField('usPrincipal')} />
+            <InputRow label="월 추가 투자" value={formatWon(sim.usMonthlyAdd)} onTap={() => setEditingField('usMonthlyAdd')} />
+            <InputRow label="연간 수익률" value={`${sim.usReturn}%`} onTap={() => setEditingField('usReturn')} />
+            <InputRow label="배당 수익률" value={`${sim.usDividend}%`} onTap={() => setEditingField('usDividend')} noBorder />
+          </SectionCard>
+
+          {/* 공통 */}
+          <SectionCard title="공통 조건">
+            <InputRow label="투자 기간" value={`${sim.years}년`} onTap={() => setEditingField('simYears')} />
+            <ToggleRow label="직장 건강보험" value={sim.isHealthInsured} onChange={v => setSim(p => ({ ...p, isHealthInsured: v }))} />
+            <ToggleRow label="피부양자" value={sim.isPidayang} onChange={v => setSim(p => ({ ...p, isPidayang: v }))} noBorder />
+          </SectionCard>
+
+          <SectionCard title="수익 내역 (국내+해외 합산)">
             <ResultRow label="총 투자금" value={formatWon(simResult.totalInvested)} />
             <ResultRow label="총 배당금 (세전)" value={formatWon(simResult.totalDividendGross)} />
             <ResultRow label="배당세 후 실수령" value={formatWon(simResult.totalDividendNet)} color={T.accent} />
             <ResultRow label="양도차익" value={formatWon(simResult.totalCapitalGainGross)} />
-            <ResultRow label="양도소득세" value={formatWon(simResult.capitalGainTax)} color={T.danger} />
+            <ResultRow label="양도소득세 (해외분)" value={formatWon(simResult.capitalGainTax)} color={T.danger} />
             <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
             <ResultRow label="세후 총 수익" value={formatWon(simResult.totalReturn)} color={T.accent} big />
           </SectionCard>
@@ -188,7 +217,7 @@ export default function InvestSimulation() {
           </button>
 
           <InfoBanner tone="neutral">
-            배당은 매월 재투자하는 것으로 계산해요. 실제 세금은 소득 상황에 따라 달라질 수 있어요.
+            배당은 매월 재투자하는 것으로 계산해요. 국내는 양도세 비과세(소액주주), 해외는 양도차익 250만 공제 후 22% 적용. 실제 세금은 소득 상황에 따라 달라질 수 있어요.
           </InfoBanner>
         </div>
       )}

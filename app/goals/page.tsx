@@ -12,7 +12,6 @@ import {
 } from '@/components/ui';
 import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
 import { getCategoryBudgetForMonth, getCurrentMonth } from '@/lib/supabase-storage';
-import InvestSimulation from '@/components/InvestSimulation';
 
 function formatWon(n: number): string {
   return '₩' + Math.floor(Math.abs(n)).toLocaleString('ko-KR');
@@ -330,9 +329,29 @@ export default function GoalsPage() {
           </CardSection>
         )}
 
-        {/* 투자 시뮬레이션 (예전 투자탭에서 이동) */}
-        <div style={{ height: 8 }} />
-        <InvestSimulation />
+        {/* 투자 시뮬레이션 진입 CTA */}
+        <div style={{ padding: '8px 20px 0' }}>
+          <button
+            onClick={() => router.push('/invest/simulation')}
+            style={{
+              width: '100%', border: 0, cursor: 'pointer', textAlign: 'left',
+              background: T.text, borderRadius: 18, padding: '18px 20px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em', marginBottom: 4 }}>
+                🎯 투자로 목표 앞당기기
+              </div>
+              <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.72)', fontWeight: 500, lineHeight: 1.5 }}>
+                목표 달성에 필요한 수익률과 예상 수익을 시뮬레이션해보세요
+              </div>
+            </div>
+            <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M1 1l5 5-5 5" stroke="rgba(255,255,255,0.6)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
 
         <div style={{ height: 20 }} />
       </ScreenBody>

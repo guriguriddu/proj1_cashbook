@@ -98,10 +98,9 @@ export default function InvestSimulation() {
 
   return (
     <div>
-      {/* 섹션 헤더 */}
-      <div style={{ padding: '8px 20px 4px' }}>
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', color: T.text }}>투자 시뮬레이션</div>
-        <div style={{ fontSize: 13, color: T.textSec, marginTop: 2 }}>세후 예상 수익·목표 달성 수익률을 계산해요</div>
+      {/* 안내 */}
+      <div style={{ padding: '12px 20px 4px' }}>
+        <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5 }}>세후 예상 수익과 목표 달성에 필요한 수익률을 계산해요</div>
       </div>
 
       {/* 모드 세그먼트 */}

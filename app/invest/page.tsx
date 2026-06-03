@@ -14,8 +14,8 @@ import { SectionCard, InputRow, ToggleRow, ResultRow, InfoBanner, NumberEditShee
 
 // ─── 타입 ────────────────────────────────────────────────────────────────────
 
-type Tab = 'tax' | 'yearend';
-type TaxType = 'quick' | 'dividend' | 'capital';
+type Tab = 'overview' | 'tax';
+type TaxType = 'stock' | 'deposit' | 'etf' | 'bond' | 'saving' | 'yearend';
 
 // ─── 메인 페이지 ─────────────────────────────────────────────────────────────
 
@@ -37,23 +37,8 @@ export default function InvestPage() {
 
   const laborIncome = investSettings.annualSalary + investSettings.bonusIncome;
 
-  // 탭 상태 (URL 파라미터에서 초기화)
-  const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window !== 'undefined') {
-      const t = new URLSearchParams(window.location.search).get('tab');
-      if (t === 'yearend') return 'yearend';
-    }
-    return 'tax';
-  });
-
-  const [taxType, setTaxType] = useState<TaxType>(() => {
-    if (typeof window !== 'undefined') {
-      const t = new URLSearchParams(window.location.search).get('tab');
-      if (t === 'capital') return 'capital';
-      if (t === 'quick') return 'quick';
-    }
-    return 'quick';
-  });
+  const [tab, setTab] = useState<Tab>('tax');
+  const [taxType, setTaxType] = useState<TaxType>('stock');
 
   // 국장/미장 빠른 세금 계산
   const [quickInputs, setQuickInputs] = useState({
@@ -90,18 +75,6 @@ export default function InvestPage() {
   });
 
   const [editingField, setEditingField] = useState<string | null>(null);
-
-  // 국장/미장 빠른 계산
-  const quickResult = (() => {
-    const krDividendTax = Math.floor(quickInputs.krDividend * 0.154);
-    const usGainTaxable = Math.max(0, quickInputs.usGain - 2_500_000);
-    const usGainTax = Math.floor(usGainTaxable * 0.22);
-    const usDividendTax = Math.floor(quickInputs.usDividend * 0.15);
-    const total = krDividendTax + usGainTax + usDividendTax;
-    const netGain = quickInputs.usGain - usGainTax;
-    const netDividend = (quickInputs.krDividend + quickInputs.usDividend) - krDividendTax - usDividendTax;
-    return { krDividendTax, usGainTaxable, usGainTax, usDividendTax, total, netGain, netDividend };
-  })();
 
   const yearendResult = calcYearendDeduction(
     yearendInputs.totalSalary > 0 ? yearendInputs : { ...yearendInputs, totalSalary: laborIncome }
@@ -179,7 +152,15 @@ export default function InvestPage() {
   };
 
   const TABS: { id: Tab; label: string }[] = [
+    { id: 'overview', label: '총괄' },
     { id: 'tax', label: '세금 계산' },
+  ];
+  const ASSET_CHIPS: { id: TaxType; label: string }[] = [
+    { id: 'stock', label: '주식' },
+    { id: 'deposit', label: '예금·적금' },
+    { id: 'etf', label: 'ETF·펀드' },
+    { id: 'bond', label: '채권' },
+    { id: 'saving', label: '절세계좌' },
     { id: 'yearend', label: '연말정산' },
   ];
 
@@ -244,81 +225,51 @@ export default function InvestPage() {
       </div>
 
       <ScreenBody>
-        {/* ── 투자 시뮬 탭 ── */}
+        {/* ── 총괄 탭 ── */}
+        {tab === 'overview' && (
+          <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <InfoBanner tone="neutral">
+              총괄장은 곧 추가됩니다. 예금·주식·채권 등 금융소득을 합산해 종합과세 여부와 총 세금을 한눈에 보여줄 예정이에요.
+            </InfoBanner>
+          </div>
+        )}
+
         {/* ── 세금 계산 탭 ── */}
         {tab === 'tax' && (
           <>
-            {/* 세금 종류 세그먼트 컨트롤 */}
-            <div style={{ padding: '12px 20px 4px' }}>
-              <div style={{ display: 'flex', background: T.bgSoft, borderRadius: 10, padding: 3, border: `1px solid ${T.divider}` }}>
-                {([
-                  { id: 'quick' as TaxType, label: '국장/미장' },
-                  { id: 'dividend' as TaxType, label: '배당세' },
-                  { id: 'capital' as TaxType, label: '양도소득세' },
-                ] as { id: TaxType; label: string }[]).map(m => (
+            {/* 자산종류 칩 (가로 스크롤) */}
+            <div style={{ padding: '12px 0 4px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <div style={{ display: 'flex', gap: 8, padding: '0 20px', width: 'max-content' }}>
+                {ASSET_CHIPS.map(c => (
                   <button
-                    key={m.id}
-                    onClick={() => setTaxType(m.id)}
+                    key={c.id}
+                    onClick={() => setTaxType(c.id)}
                     style={{
-                      flex: 1, padding: '9px 0', borderRadius: 7, border: 0,
-                      background: taxType === m.id ? T.text : 'transparent',
-                      color: taxType === m.id ? '#fff' : T.textSec,
-                      fontSize: 12, fontWeight: taxType === m.id ? 700 : 600,
-                      cursor: 'pointer', letterSpacing: '-0.01em',
-                      transition: 'all .15s',
+                      flexShrink: 0, padding: '8px 16px', borderRadius: 999,
+                      border: `1px solid ${taxType === c.id ? T.text : T.divider}`,
+                      background: taxType === c.id ? T.text : 'transparent',
+                      color: taxType === c.id ? '#fff' : T.textSec,
+                      fontSize: 13, fontWeight: taxType === c.id ? 700 : 600,
+                      cursor: 'pointer', letterSpacing: '-0.01em', whiteSpace: 'nowrap', transition: 'all .15s',
                     }}
                   >
-                    {m.label}
+                    {c.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* 국장/미장 빠른 세금 */}
-            {taxType === 'quick' && (
-              <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <SectionCard title="국장 (코스피·코스닥·ETF)">
-                  <InputRow label="배당금 (세전)" value={formatWon(quickInputs.krDividend)} onTap={() => setEditingField('krDividend')} noBorder />
-                </SectionCard>
-
-                <SectionCard title="미장 (미국·해외)">
-                  <InputRow label="양도차익 (매도가 − 매수가)" value={formatWon(quickInputs.usGain)} onTap={() => setEditingField('usGain')} />
-                  <InputRow label="배당금 (세전)" value={formatWon(quickInputs.usDividend)} onTap={() => setEditingField('usDividend')} noBorder />
-                </SectionCard>
-
-                <SectionCard title="예상 세금">
-                  {quickInputs.krDividend > 0 && (
-                    <ResultRow label="국장 배당세 (15.4% 원천징수)" value={formatWon(quickResult.krDividendTax)} color={T.danger} />
-                  )}
-                  {quickInputs.usGain > 0 && (
-                    <>
-                      <ResultRow label="미장 양도세 기본공제 250만" value={`−${formatWon(Math.min(quickInputs.usGain, 2_500_000))}`} color={T.accent} />
-                      <ResultRow label="미장 양도세 (22%)" value={formatWon(quickResult.usGainTax)} color={quickResult.usGainTax > 0 ? T.danger : T.textSec} />
-                    </>
-                  )}
-                  {quickInputs.usDividend > 0 && (
-                    <ResultRow label="미장 배당세 (15% 원천징수)" value={formatWon(quickResult.usDividendTax)} color={T.danger} />
-                  )}
-                  <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
-                  <ResultRow label="총 예상 세금" value={formatWon(quickResult.total)} color={T.danger} big />
-                  {(quickInputs.krDividend + quickInputs.usDividend) > 0 && (
-                    <ResultRow label="세후 배당금 실수령" value={formatWon(quickResult.netDividend)} color={T.accent} />
-                  )}
-                  {quickInputs.usGain > 0 && (
-                    <ResultRow label="세후 양도차익 실수령" value={formatWon(quickResult.netGain)} color={T.accent} />
-                  )}
-                </SectionCard>
-
+            {/* 준비 중 자산 (예금·ETF·채권·절세) */}
+            {(['deposit', 'etf', 'bond', 'saving'] as TaxType[]).includes(taxType) && (
+              <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <InfoBanner tone="neutral">
-                  국장 소액주주는 양도세 없음. 미장은 연간 손익통산 후 250만 공제, 22%(지방세 포함) 부과.<br />
-                  배당은 원천징수되며, 배당+이자 합계 2천만 초과 시 종합과세 대상이에요.<br />
-                  정확한 계산은 아래 <b>배당세</b> · <b>양도소득세</b> 탭을 이용하세요.
+                  {ASSET_CHIPS.find(c => c.id === taxType)?.label} 계산기는 곧 추가됩니다. (예금·적금/채권 이자소득세, ETF·펀드 분배금, ISA·연금 절세)
                 </InfoBanner>
               </div>
             )}
 
-            {/* 배당세 */}
-            {taxType === 'dividend' && (
+            {/* 주식: 배당세 */}
+            {taxType === 'stock' && (
               <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <SectionCard title="입력">
                   <InputRow label="연간 배당금 (세전)" value={formatWon(divInputs.grossDividend)} onTap={() => setEditingField('grossDividend')} />
@@ -361,8 +312,8 @@ export default function InvestPage() {
               </div>
             )}
 
-            {/* 양도소득세 */}
-            {taxType === 'capital' && (
+            {/* 주식: 양도소득세 */}
+            {taxType === 'stock' && (
               <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <InfoBanner tone="neutral">
                   💡 세금 계산 기준은 모두 <b>세전(gross)</b>이에요.<br />
@@ -467,8 +418,8 @@ export default function InvestPage() {
           </>
         )}
 
-        {/* ── 연말정산 탭 ── */}
-        {tab === 'yearend' && (
+        {/* ── 세금계산: 연말정산 칩 ── */}
+        {tab === 'tax' && taxType === 'yearend' && (
           <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
             {/* 전략 가이드 */}

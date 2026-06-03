@@ -115,13 +115,9 @@ export default function InvestSimulation() {
 
   return (
     <div>
-      {/* 안내 */}
-      <div style={{ padding: '12px 20px 4px' }}>
-        <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5 }}>세후 예상 수익과 목표 달성에 필요한 수익률을 계산해요</div>
-      </div>
-
-      {/* sticky 헤더: 모드 토글 + (forward 결과) — 스크롤해도 고정 */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: T.bg, padding: '8px 20px 12px', boxShadow: '0 8px 16px -8px rgba(10,13,20,0.14)' }}>
+      {/* sticky 헤더: 안내 + 모드 토글 + (forward 결과) — 처음부터 끝까지 상단 고정 */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: T.bg, padding: '12px 20px', boxShadow: '0 8px 16px -8px rgba(10,13,20,0.14)' }}>
+        <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5, marginBottom: 8 }}>세후 예상 수익과 목표 달성에 필요한 수익률을 계산해요</div>
         <div style={{ display: 'flex', background: T.bgSoft, borderRadius: 10, padding: 3, border: `1px solid ${T.divider}` }}>
           {([
             { id: 'forward' as SimMode, label: '💰 얼마가 될까' },

@@ -76,6 +76,13 @@ export default function InvestPage() {
 
   const [editingField, setEditingField] = useState<string | null>(null);
 
+  // 예금·적금 / ETF·펀드 / 채권 / 절세계좌 입력값
+  const [depositInputs, setDepositInputs] = useState({ interest: 1_000_000, isHealthInsured: true, isPidayang: false });
+  const [etfInputs, setEtfInputs] = useState({ isDomesticStock: true, distribution: 1_000_000, capitalGain: 5_000_000 });
+  const [bondInputs, setBondInputs] = useState({ coupon: 1_000_000, isHealthInsured: true, isPidayang: false });
+  const [isaInputs, setIsaInputs] = useState({ profit: 5_000_000, isSeomin: false });
+  const [pensionInputs, setPensionInputs] = useState({ contribution: 6_000_000, salaryUnder5500: true });
+
   const yearendResult = calcYearendDeduction(
     yearendInputs.totalSalary > 0 ? yearendInputs : { ...yearendInputs, totalSalary: laborIncome }
   );
@@ -84,6 +91,32 @@ export default function InvestPage() {
   // 계산
   const divResult = calcDividendTax({ ...divInputs, laborIncome });
   const capResult = calcCapitalGainTax(capInputs);
+
+  // 예금·채권: 이자도 금융소득(15.4%) — calcDividendTax(isDomestic=true) 재사용
+  const depositResult = calcDividendTax({ grossDividend: depositInputs.interest, otherFinancialIncome: 0, laborIncome, isDomestic: true, isHealthInsured: depositInputs.isHealthInsured, isPidayang: depositInputs.isPidayang });
+  const bondResult = calcDividendTax({ grossDividend: bondInputs.coupon, otherFinancialIncome: 0, laborIncome, isDomestic: true, isHealthInsured: bondInputs.isHealthInsured, isPidayang: bondInputs.isPidayang });
+  // ETF: 국내주식형은 분배금만 과세(매매차익 비과세), 기타형은 분배금+매매차익 모두 배당과세
+  const etfResult = (() => {
+    const taxableBase = etfInputs.isDomesticStock ? etfInputs.distribution : etfInputs.distribution + etfInputs.capitalGain;
+    const div = calcDividendTax({ grossDividend: taxableBase, otherFinancialIncome: 0, laborIncome, isDomestic: true, isHealthInsured: true, isPidayang: false });
+    const tax = taxableBase - div.netDividend;
+    const totalGross = etfInputs.distribution + etfInputs.capitalGain;
+    return { taxableBase, tax, net: totalGross - tax };
+  })();
+  // ISA: 순이익 200만(서민 400만) 비과세 + 초과 9.9% 분리과세
+  const isaResult = (() => {
+    const exempt = isaInputs.isSeomin ? 4_000_000 : 2_000_000;
+    const taxable = Math.max(0, isaInputs.profit - exempt);
+    const tax = Math.floor(taxable * 0.099);
+    const normalTax = Math.floor(isaInputs.profit * 0.154);
+    return { exempt, taxable, tax, saved: Math.max(0, normalTax - tax) };
+  })();
+  // 연금저축+IRP: 합산 900만 한도, 총급여 5,500만 이하 16.5% / 초과 13.2% 세액공제
+  const pensionResult = (() => {
+    const eligible = Math.min(pensionInputs.contribution, 9_000_000);
+    const rate = pensionInputs.salaryUnder5500 ? 0.165 : 0.132;
+    return { eligible, rate, credit: Math.floor(eligible * rate) };
+  })();
 
   const fieldDefs: Record<string, {
     label: string; value: number; unit: string; step: number; min?: number; max?: number;
@@ -108,6 +141,36 @@ export default function InvestPage() {
       label: '매도금액 (증권거래세 계산용)', value: capInputs.salePrice, unit: '원', step: 1_000_000,
       set: (v) => setCapInputs(p => ({ ...p, salePrice: v })),
       presets: [{ value: 10_000_000, label: '1,000만' }, { value: 30_000_000, label: '3,000만' }, { value: 50_000_000, label: '5,000만' }, { value: 100_000_000, label: '1억' }],
+    },
+    depositInterest: {
+      label: '연간 이자 (세전)', value: depositInputs.interest, unit: '원', step: 500_000,
+      set: (v) => setDepositInputs(p => ({ ...p, interest: v })),
+      presets: [{ value: 1_000_000, label: '100만' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }, { value: 20_000_000, label: '2,000만' }],
+    },
+    etfDistribution: {
+      label: 'ETF 분배금 (세전)', value: etfInputs.distribution, unit: '원', step: 500_000,
+      set: (v) => setEtfInputs(p => ({ ...p, distribution: v })),
+      presets: [{ value: 0, label: '0' }, { value: 1_000_000, label: '100만' }, { value: 3_000_000, label: '300만' }, { value: 5_000_000, label: '500만' }],
+    },
+    etfCapitalGain: {
+      label: 'ETF 매매차익 (세전)', value: etfInputs.capitalGain, unit: '원', step: 1_000_000,
+      set: (v) => setEtfInputs(p => ({ ...p, capitalGain: v })),
+      presets: [{ value: 0, label: '0' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }, { value: 30_000_000, label: '3,000만' }],
+    },
+    bondCoupon: {
+      label: '연간 쿠폰 이자 (세전)', value: bondInputs.coupon, unit: '원', step: 500_000,
+      set: (v) => setBondInputs(p => ({ ...p, coupon: v })),
+      presets: [{ value: 1_000_000, label: '100만' }, { value: 3_000_000, label: '300만' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }],
+    },
+    isaProfit: {
+      label: 'ISA 만기 순이익', value: isaInputs.profit, unit: '원', step: 1_000_000,
+      set: (v) => setIsaInputs(p => ({ ...p, profit: v })),
+      presets: [{ value: 2_000_000, label: '200만' }, { value: 4_000_000, label: '400만' }, { value: 10_000_000, label: '1,000만' }, { value: 20_000_000, label: '2,000만' }],
+    },
+    pensionContribution: {
+      label: '연 납입액 (연금저축+IRP)', value: pensionInputs.contribution, unit: '원', step: 500_000,
+      set: (v) => setPensionInputs(p => ({ ...p, contribution: v })),
+      presets: [{ value: 3_000_000, label: '300만' }, { value: 6_000_000, label: '600만' }, { value: 9_000_000, label: '900만' }],
     },
     krDividend: {
       label: '국장 배당금 (세전)', value: quickInputs.krDividend, unit: '원', step: 500_000,
@@ -259,12 +322,105 @@ export default function InvestPage() {
               </div>
             </div>
 
-            {/* 준비 중 자산 (예금·ETF·채권·절세) */}
-            {(['deposit', 'etf', 'bond', 'saving'] as TaxType[]).includes(taxType) && (
-              <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* 예금·적금 */}
+            {taxType === 'deposit' && (
+              <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <SectionCard title="입력">
+                  <InputRow label="연간 이자 (세전)" value={formatWon(depositInputs.interest)} onTap={() => setEditingField('depositInterest')} />
+                  <ToggleRow label="직장 건강보험 가입" value={depositInputs.isHealthInsured} onChange={v => setDepositInputs(p => ({ ...p, isHealthInsured: v }))} />
+                  <ToggleRow label="피부양자" value={depositInputs.isPidayang} onChange={v => setDepositInputs(p => ({ ...p, isPidayang: v }))} noBorder />
+                </SectionCard>
+                <SectionCard title="세금 내역">
+                  <ResultRow label="이자소득세 원천징수 (15.4%)" value={formatWon(depositResult.withheld)} color={T.danger} />
+                  {depositResult.isComprehensive && <ResultRow label="종합소득세 추가납부" value={formatWon(depositResult.comprehensiveTax)} color={T.danger} />}
+                  {depositResult.isComprehensive && depositResult.localTax > 0 && <ResultRow label="지방소득세" value={formatWon(depositResult.localTax)} color={T.danger} />}
+                  {depositResult.healthIns > 0 && <ResultRow label="건보료" value={formatWon(depositResult.healthIns)} color={T.warn} />}
+                  <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                  <ResultRow label="세후 실수령 이자" value={formatWon(depositResult.netDividend)} color={T.accent} big />
+                  <ResultRow label="실효세율" value={fmtPct(depositResult.effectiveRate)} color={T.textSec} />
+                </SectionCard>
+                <InfoBanner tone="neutral">예금·적금 이자는 이자소득세 15.4% 원천징수. 이자+배당 합계 연 2천만원 초과 시 종합과세 대상이에요.</InfoBanner>
+              </div>
+            )}
+
+            {/* ETF·펀드 */}
+            {taxType === 'etf' && (
+              <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <SectionCard title="ETF·펀드 유형">
+                  <ToggleRow label="국내 주식형 ETF" value={etfInputs.isDomesticStock} onChange={v => setEtfInputs(p => ({ ...p, isDomesticStock: v }))} noBorder />
+                </SectionCard>
                 <InfoBanner tone="neutral">
-                  {ASSET_CHIPS.find(c => c.id === taxType)?.label} 계산기는 곧 추가됩니다. (예금·적금/채권 이자소득세, ETF·펀드 분배금, ISA·연금 절세)
+                  {etfInputs.isDomesticStock
+                    ? '국내 주식형 ETF: 매매차익 비과세, 분배금만 배당세 15.4%.'
+                    : '기타형(해외·채권·원자재) ETF: 분배금 + 매매차익 모두 배당소득세 15.4% (종합과세 대상).'}
                 </InfoBanner>
+                <SectionCard title="입력 (세전)">
+                  <InputRow label="분배금" value={formatWon(etfInputs.distribution)} onTap={() => setEditingField('etfDistribution')} />
+                  <InputRow label={etfInputs.isDomesticStock ? '매매차익 (비과세)' : '매매차익'} value={formatWon(etfInputs.capitalGain)} onTap={() => setEditingField('etfCapitalGain')} noBorder />
+                </SectionCard>
+                <SectionCard title="세금 내역">
+                  {etfInputs.isDomesticStock && (
+                    <div style={{ padding: 16, background: T.accentSoft }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: T.accent }}>매매차익 비과세 ✓</div>
+                    </div>
+                  )}
+                  <ResultRow label="과세 대상 (배당소득)" value={formatWon(etfResult.taxableBase)} />
+                  <ResultRow label="배당소득세" value={formatWon(etfResult.tax)} color={T.danger} />
+                  <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                  <ResultRow label="세후 실수령" value={formatWon(etfResult.net)} color={T.accent} big />
+                </SectionCard>
+              </div>
+            )}
+
+            {/* 채권 */}
+            {taxType === 'bond' && (
+              <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <SectionCard title="입력">
+                  <InputRow label="연간 쿠폰 이자 (세전)" value={formatWon(bondInputs.coupon)} onTap={() => setEditingField('bondCoupon')} />
+                  <ToggleRow label="직장 건강보험 가입" value={bondInputs.isHealthInsured} onChange={v => setBondInputs(p => ({ ...p, isHealthInsured: v }))} />
+                  <ToggleRow label="피부양자" value={bondInputs.isPidayang} onChange={v => setBondInputs(p => ({ ...p, isPidayang: v }))} noBorder />
+                </SectionCard>
+                <SectionCard title="쿠폰 이자 세금">
+                  <ResultRow label="이자소득세 원천징수 (15.4%)" value={formatWon(bondResult.withheld)} color={T.danger} />
+                  {bondResult.isComprehensive && <ResultRow label="종합소득세 추가납부" value={formatWon(bondResult.comprehensiveTax)} color={T.danger} />}
+                  {bondResult.healthIns > 0 && <ResultRow label="건보료" value={formatWon(bondResult.healthIns)} color={T.warn} />}
+                  <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                  <ResultRow label="세후 실수령 이자" value={formatWon(bondResult.netDividend)} color={T.accent} big />
+                </SectionCard>
+                <SectionCard title="채권 매매차익">
+                  <div style={{ padding: 16, background: T.accentSoft }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: T.accent, marginBottom: 4 }}>개인 매매차익 비과세 ✓</div>
+                    <div style={{ fontSize: 13, color: T.accent, fontWeight: 500 }}>개인투자자의 채권 매매차익은 비과세예요 (금투세 폐지로 유지).</div>
+                  </div>
+                </SectionCard>
+              </div>
+            )}
+
+            {/* 절세계좌 (ISA · 연금) */}
+            {taxType === 'saving' && (
+              <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <SectionCard title="ISA (개인종합자산관리계좌)">
+                  <ToggleRow label="서민형 (총급여 5천↓ / 종소 3.8천↓)" value={isaInputs.isSeomin} onChange={v => setIsaInputs(p => ({ ...p, isSeomin: v }))} />
+                  <InputRow label="만기 순이익 (이자+배당+매매)" value={formatWon(isaInputs.profit)} onTap={() => setEditingField('isaProfit')} noBorder />
+                </SectionCard>
+                <SectionCard title="ISA 절세">
+                  <ResultRow label={`비과세 한도 (${isaInputs.isSeomin ? '서민형 400만' : '일반 200만'})`} value={`−${formatWon(isaResult.exempt)}`} color={T.accent} />
+                  <ResultRow label="과세 대상" value={formatWon(isaResult.taxable)} />
+                  <ResultRow label="분리과세 (9.9%)" value={formatWon(isaResult.tax)} color={T.danger} />
+                  <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                  <ResultRow label="일반계좌 대비 절세액" value={formatWon(isaResult.saved)} color={T.accent} big />
+                </SectionCard>
+                <SectionCard title="연금저축 · IRP 세액공제">
+                  <ToggleRow label="총급여 5,500만 이하 (공제율 16.5%)" value={pensionInputs.salaryUnder5500} onChange={v => setPensionInputs(p => ({ ...p, salaryUnder5500: v }))} />
+                  <InputRow label="연 납입액 (연금저축+IRP)" value={formatWon(pensionInputs.contribution)} onTap={() => setEditingField('pensionContribution')} noBorder />
+                </SectionCard>
+                <SectionCard title="연금 세액공제 (환급)">
+                  <ResultRow label="공제 대상 (합산 한도 900만)" value={formatWon(pensionResult.eligible)} />
+                  <ResultRow label="공제율" value={fmtPct(pensionResult.rate)} color={T.textSec} />
+                  <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
+                  <ResultRow label="예상 세액공제 (연말정산 환급)" value={formatWon(pensionResult.credit)} color={T.accent} big />
+                </SectionCard>
+                <InfoBanner tone="neutral">ISA: 순이익 200만(서민 400만) 비과세 + 초과분 9.9% 분리과세. 연금저축+IRP 합산 연 900만까지 세액공제(13.2~16.5%).</InfoBanner>
               </div>
             )}
 

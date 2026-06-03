@@ -129,6 +129,23 @@ export default function InvestSimulation() {
 
       {simMode === 'forward' && (
         <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* 결과 — 상단 sticky 고정 (입력 바꿀 때 바로 보이도록) */}
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 5,
+            background: T.text, borderRadius: 18, padding: '16px 20px',
+            boxShadow: '0 6px 20px rgba(10,13,20,0.18)',
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
+              {simInputs.years}년 후 세후 평가액
+            </div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 3 }}>
+              {formatWon(simResult.finalBalance)}
+            </div>
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+              실질 연평균 수익률 {simResult.effectiveAnnualReturn.toFixed(1)}% (세후)
+            </div>
+          </div>
+
           <SectionCard title="투자 조건">
             <InputRow label="초기 투자금" value={formatWon(simInputs.principal)} onTap={() => setEditingField('simPrincipal')} />
             <InputRow label="월 추가 투자" value={formatWon(simInputs.monthlyAdd)} onTap={() => setEditingField('simMonthlyAdd')} />
@@ -139,18 +156,6 @@ export default function InvestSimulation() {
             <ToggleRow label="직장 건강보험" value={simInputs.isHealthInsured} onChange={v => setSimInputs(p => ({ ...p, isHealthInsured: v }))} />
             <ToggleRow label="피부양자" value={simInputs.isPidayang} onChange={v => setSimInputs(p => ({ ...p, isPidayang: v }))} noBorder />
           </SectionCard>
-
-          <div style={{ background: T.text, borderRadius: 18, padding: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>
-              {simInputs.years}년 후 세후 평가액
-            </div>
-            <div style={{ fontSize: 32, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>
-              {formatWon(simResult.finalBalance)}
-            </div>
-            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
-              실질 연평균 수익률 {simResult.effectiveAnnualReturn.toFixed(1)}% (세후)
-            </div>
-          </div>
 
           <SectionCard title="수익 내역">
             <ResultRow label="총 투자금" value={formatWon(simResult.totalInvested)} />

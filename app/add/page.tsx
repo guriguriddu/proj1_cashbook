@@ -100,6 +100,22 @@ export default function AddPage() {
             badge={<Badge tone="accent" size="md">추천</Badge>}
           />
 
+          {/* 영상으로 추가 */}
+          <ChoiceCard
+            onClick={() => router.push('/add/video')}
+            iconBg="#EDE9FE"
+            iconColor="#7C3AED"
+            icon={
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                <rect x="3" y="6" width="16" height="16" rx="2.5" stroke="currentColor" strokeWidth="2" />
+                <path d="M19 11l6-3v12l-6-3v-6z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+              </svg>
+            }
+            title="영상으로 추가"
+            desc="스크롤 녹화 영상 한 개 → AI가 전체 추출"
+            badge={<Badge tone="purple" size="md">NEW</Badge>}
+          />
+
           {/* 파일 가져오기 */}
           <ChoiceCard
             onClick={() => router.push('/add/import')}

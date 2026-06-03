@@ -304,3 +304,47 @@ export async function performOcr(
     throw new Error('이미지에서 텍스트를 추출하는데 실패했습니다.')
   }
 }
+
+// Gemini 2.5 Flash 영상 인식 — 스크롤 녹화 영상 한 개에서 거래내역 추출
+export async function performVideoOcr(
+  videoFile: File,
+  onProgress?: OcrProgressCallback
+): Promise<string> {
+  console.log('영상 인식 시작:', videoFile.name, videoFile.size)
+
+  try {
+    if (onProgress) {
+      onProgress(10, 'Gemini에 영상 업로드 중...')
+    }
+
+    const formData = new FormData()
+    formData.append('video', videoFile)
+
+    const response = await fetch('/api/ocr-video', {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (onProgress) {
+      onProgress(80, '응답 처리 중...')
+    }
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || '영상 인식 실패')
+    }
+
+    const data = await response.json()
+
+    if (onProgress) {
+      onProgress(100, '완료!')
+    }
+
+    console.log('영상 인식 완료:', data.text?.substring(0, 200))
+    return data.text || ''
+  } catch (error) {
+    console.error('영상 인식 에러:', error)
+    const message = error instanceof Error ? error.message : '영상에서 거래 내역을 추출하는데 실패했습니다.'
+    throw new Error(message)
+  }
+}

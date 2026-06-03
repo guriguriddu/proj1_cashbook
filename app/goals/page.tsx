@@ -12,6 +12,7 @@ import {
 } from '@/components/ui';
 import { useBudget, useGoalSettings } from '@/hooks/useSupabaseData';
 import { getCategoryBudgetForMonth, getCurrentMonth } from '@/lib/supabase-storage';
+import InvestSimulation from '@/components/InvestSimulation';
 
 function formatWon(n: number): string {
   return '₩' + Math.floor(Math.abs(n)).toLocaleString('ko-KR');
@@ -328,6 +329,10 @@ export default function GoalsPage() {
             </div>
           </CardSection>
         )}
+
+        {/* 투자 시뮬레이션 (예전 투자탭에서 이동) */}
+        <div style={{ height: 8 }} />
+        <InvestSimulation />
 
         <div style={{ height: 20 }} />
       </ScreenBody>

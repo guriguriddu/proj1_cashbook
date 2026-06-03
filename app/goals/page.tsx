@@ -332,7 +332,7 @@ export default function GoalsPage() {
         {/* 투자 시뮬레이션 진입 CTA */}
         <div style={{ padding: '8px 20px 0' }}>
           <button
-            onClick={() => router.push('/invest/simulation')}
+            onClick={() => router.push('/goals/simulation')}
             style={{
               width: '100%', border: 0, cursor: 'pointer', textAlign: 'left',
               background: T.text, borderRadius: 18, padding: '18px 20px',

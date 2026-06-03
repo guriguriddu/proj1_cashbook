@@ -1,0 +1,216 @@
+// 투자/금융소득 세금 계산 (순수 함수 — UI 비의존, 투자탭·목표탭 공용)
+
+// ─── 종합소득세 ───────────────────────────────────────────────────────────────
+
+export const INCOME_TAX_BRACKETS = [
+  { limit: 14_000_000, rate: 0.06, deduction: 0 },
+  { limit: 50_000_000, rate: 0.15, deduction: 1_260_000 },
+  { limit: 88_000_000, rate: 0.24, deduction: 5_760_000 },
+  { limit: 150_000_000, rate: 0.35, deduction: 15_440_000 },
+  { limit: 300_000_000, rate: 0.38, deduction: 19_940_000 },
+  { limit: 500_000_000, rate: 0.40, deduction: 25_940_000 },
+  { limit: 1_000_000_000, rate: 0.42, deduction: 35_940_000 },
+  { limit: Infinity, rate: 0.45, deduction: 65_940_000 },
+];
+
+export function calcIncomeTax(taxable: number): number {
+  for (const b of INCOME_TAX_BRACKETS) {
+    if (taxable <= b.limit) return Math.max(0, taxable * b.rate - b.deduction);
+  }
+  return 0;
+}
+
+export function calcLocalTax(incomeTax: number): number {
+  return incomeTax * 0.1;
+}
+
+const HEALTH_INS_RATE = 0.0709;
+const HEALTH_INS_LONG_CARE = 0.1295;
+
+// ─── 배당소득세 (금융소득종합과세 비교과세) ─────────────────────────────────────
+
+export interface TaxResult {
+  grossDividend: number;
+  withheld: number;
+  isComprehensive: boolean;
+  comprehensiveTax: number;
+  localTax: number;
+  healthIns: number;
+  netDividend: number;
+  effectiveRate: number;
+  losePidayang: boolean;
+}
+
+export function calcDividendTax(params: {
+  grossDividend: number;
+  otherFinancialIncome: number;
+  laborIncome: number;
+  isDomestic: boolean;
+  isHealthInsured: boolean;
+  isPidayang: boolean;
+}): TaxResult {
+  const { grossDividend, otherFinancialIncome, laborIncome, isDomestic, isHealthInsured, isPidayang } = params;
+  const withholdRate = isDomestic ? 0.154 : 0.15;
+  const withheld = Math.floor(grossDividend * withholdRate);
+  const totalFinancial = grossDividend + otherFinancialIncome;
+  const COMPREHENSIVE_THRESHOLD = 20_000_000;
+
+  let comprehensiveTax = 0;
+  let localTax = 0;
+
+  if (totalFinancial > COMPREHENSIVE_THRESHOLD) {
+    const excessFinancial = totalFinancial - COMPREHENSIVE_THRESHOLD;
+    const separateTax = COMPREHENSIVE_THRESHOLD * 0.14;
+    const totalTaxable = laborIncome + excessFinancial;
+    const comprehensiveTotal = calcIncomeTax(totalTaxable);
+    const laborOnly = calcIncomeTax(laborIncome);
+    const additionalComprehensive = comprehensiveTotal - laborOnly;
+    const alreadyWithheld14 = separateTax + excessFinancial * 0.14;
+    comprehensiveTax = Math.max(0, additionalComprehensive - (alreadyWithheld14 - separateTax));
+    localTax = calcLocalTax(comprehensiveTax);
+  }
+
+  const losePidayang = isPidayang && totalFinancial > 10_000_000;
+  let healthIns = 0;
+  if (isHealthInsured && !isPidayang) {
+    if (totalFinancial > COMPREHENSIVE_THRESHOLD) {
+      const excessForHealth = totalFinancial - COMPREHENSIVE_THRESHOLD;
+      const healthBase = excessForHealth * HEALTH_INS_RATE;
+      healthIns = Math.floor(healthBase * (1 + HEALTH_INS_LONG_CARE));
+    }
+  } else if (losePidayang) {
+    const healthBase = totalFinancial * HEALTH_INS_RATE;
+    healthIns = Math.floor(healthBase * (1 + HEALTH_INS_LONG_CARE));
+  }
+
+  const totalTax = withheld + comprehensiveTax + localTax + healthIns;
+  const netDividend = grossDividend - totalTax;
+  const effectiveRate = grossDividend > 0 ? totalTax / grossDividend : 0;
+
+  return {
+    grossDividend, withheld,
+    isComprehensive: totalFinancial > COMPREHENSIVE_THRESHOLD,
+    comprehensiveTax, localTax, healthIns,
+    netDividend, effectiveRate, losePidayang,
+  };
+}
+
+// ─── 양도소득세 ───────────────────────────────────────────────────────────────
+
+export interface CapGainResult {
+  gain: number;
+  transactionTax: number;
+  isTaxExempt: boolean;
+  deduction: number;
+  taxable: number;
+  tax: number;
+  net: number;
+  effectiveRate: number;
+}
+
+export function calcCapitalGainTax(params: {
+  gain: number;
+  salePrice: number;
+  isDomestic: boolean;
+  isMajorShareholder: boolean;
+  market: 'kospi' | 'kosdaq' | 'overseas';
+}): CapGainResult {
+  const { gain, salePrice, isDomestic, isMajorShareholder, market } = params;
+  // 증권거래세(농특세 포함): 2025년부터 코스피·코스닥 모두 0.15%. 해외는 없음.
+  const txTaxRate = market === 'kospi' ? 0.0015 : market === 'kosdaq' ? 0.0015 : 0;
+  const transactionTax = Math.floor(salePrice * txTaxRate);
+
+  if (isDomestic && !isMajorShareholder) {
+    return { gain, transactionTax, isTaxExempt: true, deduction: 0, taxable: 0, tax: 0, net: gain - transactionTax, effectiveRate: 0 };
+  }
+
+  let tax = 0;
+  let deduction = 0;
+
+  if (isDomestic && isMajorShareholder) {
+    const BRACKET = 300_000_000;
+    if (gain <= BRACKET) {
+      tax = Math.floor(gain * 0.22);
+    } else {
+      tax = Math.floor(BRACKET * 0.22 + (gain - BRACKET) * 0.275);
+    }
+  } else {
+    deduction = Math.min(2_500_000, gain);
+    const taxable = Math.max(0, gain - 2_500_000);
+    tax = Math.floor(taxable * 0.22);
+  }
+
+  const taxable = Math.max(0, gain - deduction);
+  const net = gain - tax - transactionTax;
+  const totalOut = tax + transactionTax;
+  const effectiveRate = gain > 0 ? totalOut / gain : 0;
+  return { gain, transactionTax, isTaxExempt: false, deduction, taxable, tax, net, effectiveRate };
+}
+
+// ─── 포맷·금융 헬퍼 ───────────────────────────────────────────────────────────
+
+export function formatWon(n: number): string {
+  const abs = Math.abs(Math.floor(n));
+  if (abs >= 100_000_000) {
+    const eok = Math.floor(abs / 100_000_000);
+    const man = Math.floor((abs % 100_000_000) / 10_000);
+    return man > 0 ? `${eok}억 ${man.toLocaleString()}만원` : `${eok}억원`;
+  }
+  if (abs >= 10_000) return `${Math.floor(abs / 10_000).toLocaleString()}만원`;
+  return `${abs.toLocaleString()}원`;
+}
+
+export function fmtPct(r: number): string {
+  return (r * 100).toFixed(1) + '%';
+}
+
+export function solveMonthlyRate(pv: number, pmt: number, fv: number, n: number): number {
+  if (n <= 0) return 0;
+  if (fv <= pv + pmt * n) return 0;
+  let lo = 1e-8, hi = 1.0;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    const factor = Math.pow(1 + mid, n);
+    const calc = pv * factor + (pmt * (factor - 1)) / mid;
+    if (calc < fv) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// ─── 연말정산 ─────────────────────────────────────────────────────────────────
+
+export interface YearendInputs {
+  totalSalary: number;
+  creditCard: number;
+  checkCard: number;
+  traditional: number;
+  transit: number;
+}
+
+export function calcYearendDeduction(inputs: YearendInputs) {
+  const { totalSalary, creditCard, checkCard, traditional, transit } = inputs;
+  const threshold = Math.floor(totalSalary * 0.25);
+
+  // 신용카드로 threshold 먼저 소진
+  const creditAfterThreshold = Math.max(0, creditCard - threshold);
+  const remainingThreshold = Math.max(0, threshold - creditCard);
+  const checkAfterThreshold = Math.max(0, checkCard - remainingThreshold);
+
+  const creditDeduction = Math.floor(creditAfterThreshold * 0.15);
+  const checkDeduction = Math.floor(checkAfterThreshold * 0.30);
+  const traditionalDeduction = Math.floor(traditional * 0.40);
+  const transitDeduction = Math.floor(transit * 0.40);
+
+  const baseLimit = totalSalary <= 70_000_000 ? 3_000_000 : totalSalary <= 120_000_000 ? 2_500_000 : 2_000_000;
+  const baseDeduction = Math.min(creditDeduction + checkDeduction, baseLimit);
+  const extraTraditional = Math.min(traditionalDeduction, 1_000_000);
+  const extraTransit = Math.min(transitDeduction, 1_000_000);
+  const totalDeduction = baseDeduction + extraTraditional + extraTransit;
+
+  return {
+    threshold, creditDeduction, checkDeduction,
+    traditionalDeduction, transitDeduction,
+    baseLimit, baseDeduction, extraTraditional, extraTransit,
+    totalDeduction, remainingThreshold,
+  };
+}

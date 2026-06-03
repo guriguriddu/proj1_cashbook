@@ -89,7 +89,7 @@ function findDutchSplit<T extends { amount: number }>(
 ): { N: number; matched: T[]; total: number; myShare: number } | null {
   for (let N = 2; N <= 8; N++) {
     const perPerson = expenseAmount / N;
-    const tol = perPerson * 0.2; // 1/N 대비 ±20% 허용 (반올림·소액 차이)
+    const tol = perPerson * 0.05; // 1/N 대비 95~105% 허용 (반올림·소액 차이)
     const matched = candidates.filter((t) => Math.abs(t.amount - perPerson) <= tol);
     if (matched.length !== N - 1) continue; // 나머지 N-1명이 각자 1/N
     const total = matched.reduce((s, t) => s + t.amount, 0);

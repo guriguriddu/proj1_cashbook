@@ -231,7 +231,11 @@ export function parseGeminiResponse(text: string): ExtractedTransaction[] {
     }
 
     if (amount !== 0 && merchant) {
-      const isIncoming = txType === '입금'
+      // 안전망: 화살표 오른쪽이 "내 ○○"(내 카카오페이/내 계좌 등)이면 = 내게 들어온 입금.
+      // Gemini 가 유형을 '지출'로 잘못 단 경우라도 입금으로 교정한다.
+      // (왼쪽이 내 계좌인 "내 KB → 카카오페이"(충전/출금)는 매칭되지 않음 — '내'가 → 앞이라서)
+      const arrowIncoming = /→\s*내\s*\S/.test(merchant) || /→\s*내\s*\S/.test(block)
+      const isIncoming = txType === '입금' || arrowIncoming
       const isRefund = amount < 0
       const absAmount = Math.abs(amount)
       const { excluded, reason } = isExcludedTransaction(merchant)

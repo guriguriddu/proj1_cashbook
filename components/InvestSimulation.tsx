@@ -200,7 +200,7 @@ export default function InvestSimulation() {
       )}
 
       {simMode === 'goal' && (
-        <GoalReverseSection laborIncome={laborIncome} onSwitchToSim={() => setSimMode('forward')} />
+        <GoalReverseSection laborIncome={laborIncome} />
       )}
 
       {editingField && fieldDefs[editingField] && (() => {
@@ -220,7 +220,7 @@ export default function InvestSimulation() {
 
 // ─── 목표 역산 ────────────────────────────────────────────────────────────────
 
-function GoalReverseSection({ laborIncome, onSwitchToSim }: { laborIncome: number; onSwitchToSim: () => void }) {
+function GoalReverseSection({ laborIncome }: { laborIncome: number }) {
   void laborIncome;
   const router = useRouter();
   const { settings, loading: goalLoading } = useGoalSettings();
@@ -334,26 +334,6 @@ function GoalReverseSection({ laborIncome, onSwitchToSim }: { laborIncome: numbe
           })}
         </SectionCard>
       )}
-
-      <button
-        onClick={onSwitchToSim}
-        style={{
-          border: `1px solid ${T.divider}`, background: T.bg, borderRadius: 14, padding: '14px 16px',
-          cursor: 'pointer', width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 2 }}>
-            💰 투자 시뮬레이션으로 확인
-          </div>
-          <div style={{ fontSize: 12, color: T.textSec, fontWeight: 500 }}>
-            수익률 입력 시 세후 예상 수익액 계산
-          </div>
-        </div>
-        <svg width="6" height="10" viewBox="0 0 6 10" fill="none">
-          <path d="M1 1l4 4-4 4" stroke={T.textTer} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
 
       <InfoBanner tone="neutral">
         위 수익률은 세전(gross) 기준이에요. 실제 투자 시 배당세·양도세가 추가로 부과돼요.<br />

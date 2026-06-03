@@ -10,12 +10,15 @@ import {
   PrimaryButton,
   ProgressBar,
 } from '@/components/ui';
-import { performVideoOcr, parseGeminiResponse, parseOcrText, OcrProgressCallback } from '@/lib/ocr';
+import { performVideoOcr, performVideoOcrByUrl, parseGeminiResponse, parseOcrText, OcrProgressCallback } from '@/lib/ocr';
+import { uploadReceiptImage, getReceiptImageUrl, deleteReceiptImage } from '@/lib/supabase-storage';
 import type { ExtractedTransaction } from '@/types';
 
-// 배포(Vercel) 서버리스 함수 요청 본문 한도(4.5MB)에 맞춘 업로드 상한.
-// 이보다 크면 운영 사이트에서 413 으로 실패하므로 미리 막는다.
-const MAX_UPLOAD_MB = 4.5;
+// 업로드 가능한 최대 용량.
+const MAX_UPLOAD_MB = 50;
+// 이 크기 이하는 서버로 직접 전송(빠름). 초과분은 Vercel 본문 4.5MB 한도 때문에
+// 스토리지에 올린 뒤 서명 URL 만 서버로 전달한다.
+const DIRECT_MAX_MB = 4.5;
 
 export default function VideoUploadPage() {
   const router = useRouter();
@@ -67,14 +70,28 @@ export default function VideoUploadPage() {
     setError(null);
 
     // 업로드/처리 동안 천천히 차오르는 가짜 진행률 (Gemini 응답까지 시간이 걸림)
-    smoothProgress(0, 85, 20000);
+    smoothProgress(0, 85, 25000);
 
     const handleProgress: OcrProgressCallback = (prog) => {
       if (prog >= 100) smoothProgress(85, 95, 300);
     };
 
+    const sizeMb = video.file.size / (1024 * 1024);
+    let storagePath: string | null = null;
+
     try {
-      const ocrText = await performVideoOcr(video.file, handleProgress);
+      let ocrText: string;
+
+      if (sizeMb <= DIRECT_MAX_MB) {
+        // 작은 영상 — 서버로 직접 전송
+        ocrText = await performVideoOcr(video.file, handleProgress);
+      } else {
+        // 대용량 — 스토리지 업로드 → 서명 URL → 서버가 Gemini Files API 로 처리
+        storagePath = await uploadReceiptImage(video.file);
+        const signedUrl = await getReceiptImageUrl(storagePath);
+        if (!signedUrl) throw new Error('업로드한 영상 URL을 만들지 못했습니다.');
+        ocrText = await performVideoOcrByUrl(signedUrl, handleProgress);
+      }
 
       let extracted: ExtractedTransaction[] = parseGeminiResponse(ocrText);
       if (extracted.length === 0) {
@@ -93,6 +110,11 @@ export default function VideoUploadPage() {
       console.error('영상 추출 실패:', err);
       setError(err instanceof Error ? err.message : '영상 인식 실패');
       setExtracting(false);
+    } finally {
+      // 추출에 쓴 임시 영상은 스토리지에서 정리 (실패해도 무시)
+      if (storagePath) {
+        deleteReceiptImage(storagePath).catch(() => {});
+      }
     }
   };
 
@@ -108,7 +130,7 @@ export default function VideoUploadPage() {
             올리면, 영상 전체에서 거래를 한 번에 추출해드려요.
             <br />
             <span style={{ color: T.textTer, fontSize: 13 }}>
-              영상 용량은 <strong>{MAX_UPLOAD_MB}MB 이하</strong> (대략 1~2분 분량)
+              영상 용량은 <strong>{MAX_UPLOAD_MB}MB 이하</strong> · 인식 정확도·속도를 위해 <strong>2~3분 이내</strong>를 권장해요
             </span>
           </div>
         </div>

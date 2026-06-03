@@ -348,3 +348,43 @@ export async function performVideoOcr(
     throw new Error(message)
   }
 }
+
+// 대용량 영상용 — 스토리지 서명 URL 을 서버에 전달해 Gemini Files API 로 처리.
+// (Vercel 서버리스 본문 4.5MB 한도를 우회)
+export async function performVideoOcrByUrl(
+  videoUrl: string,
+  onProgress?: OcrProgressCallback
+): Promise<string> {
+  try {
+    if (onProgress) {
+      onProgress(10, 'Gemini에 영상 전달 중...')
+    }
+
+    const response = await fetch('/api/ocr-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoUrl }),
+    })
+
+    if (onProgress) {
+      onProgress(80, '응답 처리 중...')
+    }
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || '영상 인식 실패')
+    }
+
+    const data = await response.json()
+
+    if (onProgress) {
+      onProgress(100, '완료!')
+    }
+
+    return data.text || ''
+  } catch (error) {
+    console.error('영상 인식(URL) 에러:', error)
+    const message = error instanceof Error ? error.message : '영상에서 거래 내역을 추출하는데 실패했습니다.'
+    throw new Error(message)
+  }
+}

@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildExtractionPrompt } from '@/lib/ocr-prompt'
 
+// 영상 처리(Files API 업로드 + 폴링 + 추론)는 시간이 걸리므로 함수 실행 한도를 늘린다.
+export const maxDuration = 60
+
 const MODEL = 'gemini-2.5-flash'
 const MAX_RETRIES = 3
 const BASE_DELAY_MS = 1000
 
-// inline_data 로 보낼 수 있는 최대 원본 크기 (base64 인플레이션 + 요청 한도 고려).
+// inline_data 로 보낼 수 있는 최대 원본 크기.
+// base64 인플레이션(×1.33) 후에도 Gemini inline 요청 한도(~20MB) 아래가 되도록 12MB 로 둔다.
 // 이보다 크면 Files API 로 업로드한다.
-const INLINE_MAX_BYTES = 15 * 1024 * 1024
+const INLINE_MAX_BYTES = 12 * 1024 * 1024
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com'
 
@@ -115,20 +119,42 @@ async function uploadVideoToFilesApi(
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
-    const file = formData.get('video') as File
-
-    if (!file) {
-      return NextResponse.json({ error: '영상이 없습니다' }, { status: 400 })
-    }
-
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
       return NextResponse.json({ error: 'API 키가 설정되지 않았습니다' }, { status: 500 })
     }
 
-    const bytes = await file.arrayBuffer()
-    const mimeType = file.type || 'video/mp4'
+    // 두 가지 입력 모드를 지원한다.
+    //  1) multipart/form-data 의 video 파일 (4.5MB 이하 직접 업로드)
+    //  2) application/json 의 videoUrl (스토리지 서명 URL — 4.5MB 초과 대용량 우회)
+    let bytes: ArrayBuffer
+    let mimeType: string
+    let displayName: string
+
+    const contentType = request.headers.get('content-type') || ''
+
+    if (contentType.includes('application/json')) {
+      const { videoUrl } = await request.json()
+      if (!videoUrl || typeof videoUrl !== 'string') {
+        return NextResponse.json({ error: '영상 URL이 없습니다' }, { status: 400 })
+      }
+      const fileRes = await fetch(videoUrl)
+      if (!fileRes.ok) {
+        return NextResponse.json({ error: '스토리지에서 영상을 불러오지 못했습니다' }, { status: 502 })
+      }
+      bytes = await fileRes.arrayBuffer()
+      mimeType = fileRes.headers.get('content-type') || 'video/mp4'
+      displayName = 'recording'
+    } else {
+      const formData = await request.formData()
+      const file = formData.get('video') as File
+      if (!file) {
+        return NextResponse.json({ error: '영상이 없습니다' }, { status: 400 })
+      }
+      bytes = await file.arrayBuffer()
+      mimeType = file.type || 'video/mp4'
+      displayName = file.name || 'recording'
+    }
 
     // 영상은 항목이 많을 수 있어 출력 토큰을 넉넉히
     const generationConfig = { temperature: 0.1, maxOutputTokens: 16384 }
@@ -140,7 +166,7 @@ export async function POST(request: NextRequest) {
       const base64 = Buffer.from(bytes).toString('base64')
       mediaPart = { inline_data: { mime_type: mimeType, data: base64 } }
     } else {
-      const uploaded = await uploadVideoToFilesApi(apiKey, bytes, mimeType, file.name || 'recording')
+      const uploaded = await uploadVideoToFilesApi(apiKey, bytes, mimeType, displayName)
       mediaPart = { file_data: { mime_type: uploaded.mimeType, file_uri: uploaded.uri } }
     }
 
@@ -175,7 +201,7 @@ export async function POST(request: NextRequest) {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
     console.log('[OCR-VIDEO] Gemini 원본 응답:\n' + text)
-    console.log('[OCR-VIDEO] 파일명:', file.name, '크기:', file.size)
+    console.log('[OCR-VIDEO] 영상:', displayName, '크기:', bytes.byteLength)
 
     return NextResponse.json({ text, _debug: text })
   } catch (error) {

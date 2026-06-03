@@ -77,6 +77,29 @@ const PURE_PAY_SERVICE_NAMES = [
 // 은행 이체 키워드
 const BANK_TRANSFER_KEYWORDS = ['이체', '송금', '충전', '입금'];
 
+// "진짜 n빵"인지 검증하고 분할 정보를 돌려준다.
+// 단순히 입금이 좀 들어왔다고 n빵 처리하면 무관한 입금이 우연히 매칭되어
+// 내 몫이 비현실적으로 작아지는 오류가 난다. 그래서 엄격히 본다:
+//  - N명이면 나머지 N-1명이 "각자 ≈ 금액/N" 을 보내야 함 (정확히 N-1건 매칭)
+//  - 내 몫(= 금액 - 받은합)도 "≈ 금액/N" 이어야 함
+// 두 조건을 모두 만족할 때만 n빵으로 인정.
+function findDutchSplit<T extends { amount: number }>(
+  expenseAmount: number,
+  candidates: T[]
+): { N: number; matched: T[]; total: number; myShare: number } | null {
+  for (let N = 2; N <= 8; N++) {
+    const perPerson = expenseAmount / N;
+    const tol = perPerson * 0.2; // 1/N 대비 ±20% 허용 (반올림·소액 차이)
+    const matched = candidates.filter((t) => Math.abs(t.amount - perPerson) <= tol);
+    if (matched.length !== N - 1) continue; // 나머지 N-1명이 각자 1/N
+    const total = matched.reduce((s, t) => s + t.amount, 0);
+    const myShare = expenseAmount - total;
+    if (Math.abs(myShare - perPerson) > tol) continue; // 내 몫도 1/N 수준
+    return { N, matched, total, myShare: Math.max(0, myShare) };
+  }
+  return null;
+}
+
 export default function OCRReviewPage() {
   const router = useRouter();
   const [items, setItems] = useState<ReviewItem[]>([]);
@@ -123,25 +146,16 @@ export default function OCRReviewPage() {
                 !usedIncoming.has(t.id) && t.date >= expense.date && t.date <= deadlineStr
               );
               if (!candidates.length) return;
-              let best: { N: number; matched: typeof candidates; total: number } | null = null;
-              for (let N = 2; N <= 8; N++) {
-                const perPerson = expense.amount / N;
-                const tol = perPerson * 0.15;
-                const matched = candidates.filter(t => Math.abs(t.amount - perPerson) <= tol);
-                if (!matched.length) continue;
-                const total = matched.reduce((s, t) => s + t.amount, 0);
-                if (total < expense.amount * 0.25) continue;
-                if (!best || matched.length > best.matched.length) best = { N, matched, total };
-              }
-              if (!best) return;
-              best.matched.forEach(t => usedIncoming.add(t.id));
+              const split = findDutchSplit(expense.amount, candidates);
+              if (!split) return;
+              split.matched.forEach(t => usedIncoming.add(t.id));
               suggestions.push({
                 expenseId: expense.id,
                 merchant: expense.merchant,
                 date: expense.date,
                 originalAmount: expense.amount,
-                myShare: Math.max(0, expense.amount - best.total),
-                peopleCount: best.N,
+                myShare: split.myShare,
+                peopleCount: split.N,
               });
             });
           if (suggestions.length > 0) setDutchSuggestions(suggestions);
@@ -315,27 +329,17 @@ export default function OCRReviewPage() {
           );
           if (candidates.length === 0) return;
 
-          let best: { N: number; matched: typeof candidates; total: number } | null = null;
-          for (let N = 2; N <= 8; N++) {
-            const perPerson = expense.amount / N;
-            const tol = perPerson * 0.15;
-            const matched = candidates.filter(t => Math.abs(t.amount - perPerson) <= tol);
-            if (matched.length === 0) continue;
-            const total = matched.reduce((s, t) => s + t.amount, 0);
-            if (total < expense.amount * 0.25) continue;
-            if (!best || matched.length > best.matched.length) best = { N, matched, total };
-          }
-          if (!best) return;
+          const split = findDutchSplit(expense.amount, candidates);
+          if (!split) return;
 
-          best.matched.forEach(t => { t.used = true; });
-          const myShare = Math.max(0, expense.amount - best.total);
+          split.matched.forEach(t => { t.used = true; });
           expense.dutchPay = {
             originalAmount: expense.amount,
-            myShare,
-            receivedTotal: best.total,
-            peopleCount: best.N,
+            myShare: split.myShare,
+            receivedTotal: split.total,
+            peopleCount: split.N,
           };
-          expense.amount = myShare;
+          expense.amount = split.myShare;
         });
     }
 

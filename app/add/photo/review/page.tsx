@@ -35,6 +35,8 @@ interface ReviewItem extends ExtractedTransaction {
   isPaymentTransfer?: boolean;
   linkedPaymentId?: string;
   linkedTransferId?: string;
+  overseasSettled?: boolean;    // 해외결제 실청구액으로 금액 교체됨
+  overseasOriginalAmount?: number; // 교체 전(가결제) 금액
   isIncoming?: boolean;         // 타인 입금 (n빵 감지용)
   dutchPay?: {                  // n빵 감지 결과
     originalAmount: number;
@@ -342,6 +344,35 @@ export default function OCRReviewPage() {
           expense.amount = split.myShare;
         });
     }
+
+    // 7. 해외결제 가결제 ↔ 실청구(비자해외승인대금출금) 통합 — 보수적
+    // 해외 카드결제는 가결제(승인, 추정환율)와 실청구(비자해외승인대금출금, 확정환율)가
+    // 둘 다 뜨고 금액이 환율로 조금 다름. 실청구는 가맹점명이 없으니,
+    // 가결제(가맹점명 보존)의 금액을 실청구액으로 바꾸고 실청구 항목은 제외한다.
+    // 오매칭 방지: 금액 ±5% + 날짜 ±7일 + 후보가 정확히 1개일 때만.
+    const OVERSEAS_SETTLE = /비자해외|마스터해외|해외승인대금|해외이용대금|해외매입|해외매출/;
+    const daysApart = (a: string, b: string) =>
+      Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86400000);
+    items
+      .filter(s => !s.excluded && OVERSEAS_SETTLE.test(s.merchant))
+      .forEach(settle => {
+        const candidates = items.filter(p =>
+          p !== settle && !p.excluded && !p.overseasSettled &&
+          !OVERSEAS_SETTLE.test(p.merchant) &&
+          !p.isPaymentTransfer && !p.isCancellation && !p.isExistingDuplicate &&
+          settle.amount > 0 &&
+          Math.abs(p.amount - settle.amount) / settle.amount <= 0.05 &&
+          daysApart(p.date, settle.date) <= 7
+        );
+        if (candidates.length === 1) {
+          const prov = candidates[0];
+          prov.overseasSettled = true;
+          prov.overseasOriginalAmount = prov.amount;
+          prov.amount = settle.amount;           // 실청구액으로 교체
+          settle.excluded = true;
+          settle.excludeReason = '해외결제 실청구액으로 통합';
+        }
+      });
 
     return items;
   }
@@ -1240,6 +1271,7 @@ function OCRRow({
             {!isInvalid && hasCancelMatch && <Badge tone="purple" size="sm">{item.isCancellation ? '취소' : '취소됨'}</Badge>}
             {!isInvalid && item.isPaymentTransfer && <Badge tone="warn" size="sm">확인 필요</Badge>}
             {!isInvalid && item.linkedTransferId && <Badge tone="accent" size="sm">연결됨</Badge>}
+            {!isInvalid && item.overseasSettled && <Badge tone="accent" size="sm">해외 실청구</Badge>}
             {!isInvalid && item.dutchPay && (
               <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: '#EEF2FF', color: '#4F46E5', border: '1px solid #C7D2FE' }}>
                 n빵 {item.dutchPay.peopleCount}명

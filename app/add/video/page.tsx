@@ -178,8 +178,8 @@ export default function VideoUploadPage() {
             토스·뱅크 거래내역을 <strong>천천히 스크롤하며 화면 녹화</strong>한 영상을 올리면 거래를 자동 추출해요.
             <br />
             <span style={{ color: T.textTer, fontSize: 13 }}>
-              한 클립은 <strong>15초 이내</strong>로 짧게 — 길면 처리 시간 초과(504)가 나요.
-              내역이 길면 <strong>여러 클립으로 나눠 한 번에</strong> 올리세요 (최대 {MAX_VIDEOS}개).
+              · 한 화면이 <strong>최소 1초, 권장 2초</strong> 이상 보이도록 천천히 스크롤하세요. (AI가 초당 1프레임으로 분석 → 너무 빠르면 누락)<br />
+              · 한 클립은 <strong>15초 이내</strong>로 짧게 (길면 처리 시간 초과). 내역이 길면 <strong>여러 클립으로 나눠 한 번에</strong> 올리세요 (최대 {MAX_VIDEOS}개).
             </span>
           </div>
         </div>
@@ -305,7 +305,7 @@ export default function VideoUploadPage() {
 
         {/* 팁 */}
         <div style={{ padding: '8px 20px', fontSize: 12, color: T.textTer, lineHeight: 1.6 }}>
-          ※ 각 거래가 잘 보이도록 천천히 스크롤하세요. 여러 클립을 올리면 자동으로 합치고 <strong>중복은 검수 단계에서 제거</strong>돼요.
+          ※ 한 화면당 <strong>1~2초</strong> 머물도록 천천히(살짝 멈추듯) 스크롤하면 누락이 줄어요. 여러 클립을 올리면 자동으로 합치고 <strong>중복은 검수 단계에서 제거</strong>돼요.
         </div>
 
         {/* 에러 */}

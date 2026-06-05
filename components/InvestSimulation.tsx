@@ -115,8 +115,8 @@ export default function InvestSimulation() {
 
   return (
     <div>
-      {/* sticky 헤더: 안내 + 모드 토글 + (forward 결과) — 처음부터 끝까지 상단 고정 */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: T.bg, padding: '12px 20px', boxShadow: '0 8px 16px -8px rgba(10,13,20,0.14)' }}>
+      {/* sticky 헤더: 안내 + 모드 토글 — AppHeader(약 103px) 아래에 고정 (window 스크롤) */}
+      <div style={{ position: 'sticky', top: 103, zIndex: 9, background: T.bg, padding: '12px 20px', boxShadow: '0 8px 16px -8px rgba(10,13,20,0.14)' }}>
         <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5, marginBottom: 8 }}>세후 예상 수익과 목표 달성에 필요한 수익률을 계산해요</div>
         <div style={{ display: 'flex', background: T.bgSoft, borderRadius: 10, padding: 3, border: `1px solid ${T.divider}` }}>
           {([
@@ -138,24 +138,23 @@ export default function InvestSimulation() {
             </button>
           ))}
         </div>
-
-        {simMode === 'forward' && (
-          <div style={{ marginTop: 10, background: T.text, borderRadius: 18, padding: '14px 20px' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 5 }}>
-              {sim.years}년 후 세후 평가액
-            </div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 3 }}>
-              {formatWon(simResult.finalBalance)}
-            </div>
-            <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
-              실질 연평균 수익률 {simResult.effectiveAnnualReturn.toFixed(1)}% (세후)
-            </div>
-          </div>
-        )}
       </div>
 
       {simMode === 'forward' && (
         <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* 결과 (스크롤) */}
+          <div style={{ background: T.text, borderRadius: 18, padding: '16px 20px' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 5 }}>
+              {sim.years}년 후 세후 평가액
+            </div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', marginBottom: 3 }}>
+              {formatWon(simResult.finalBalance)}
+            </div>
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+              실질 연평균 수익률 {simResult.effectiveAnnualReturn.toFixed(1)}% (세후)
+            </div>
+          </div>
+
           {/* 국내 주식 */}
           <SectionCard title="🇰🇷 국내 주식 (양도세 비과세·소액주주)">
             <InputRow label="초기 투자금" value={formatWon(sim.krPrincipal)} onTap={() => setEditingField('krPrincipal')} />

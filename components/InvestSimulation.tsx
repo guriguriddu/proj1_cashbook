@@ -115,8 +115,8 @@ export default function InvestSimulation() {
 
   return (
     <div>
-      {/* sticky 헤더: 안내 + 모드 토글 — ScreenBody 스크롤 기준 상단 고정 */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: T.bg, padding: '12px 20px', boxShadow: '0 8px 16px -8px rgba(10,13,20,0.14)' }}>
+      {/* sticky 헤더: 안내 + 모드 토글 — window 스크롤 기준, AppHeader(103px) 아래 고정 */}
+      <div style={{ position: 'sticky', top: 103, zIndex: 9, background: T.bg, padding: '12px 20px', boxShadow: '0 8px 16px -8px rgba(10,13,20,0.14)' }}>
         <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5, marginBottom: 8 }}>세후 예상 수익과 목표 달성에 필요한 수익률을 계산해요</div>
         <div style={{ display: 'flex', background: T.bgSoft, borderRadius: 10, padding: 3, border: `1px solid ${T.divider}` }}>
           {([

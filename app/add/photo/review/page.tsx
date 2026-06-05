@@ -37,6 +37,7 @@ interface ReviewItem extends ExtractedTransaction {
   linkedTransferId?: string;
   overseasSettled?: boolean;    // 해외결제 실청구액으로 금액 교체됨
   overseasOriginalAmount?: number; // 교체 전(가결제) 금액
+  learnedCategory?: boolean;    // 과거 분류 학습으로 카테고리 자동 적용됨
   isIncoming?: boolean;         // 타인 입금 (n빵 감지용)
   dutchPay?: {                  // n빵 감지 결과
     originalAmount: number;
@@ -173,6 +174,26 @@ export default function OCRReviewPage() {
       ...t,
       excluded: t.isExcluded || false,
     }));
+
+    // 0-pre. 학습: 과거에 저장한 가맹점→카테고리를 기억해 자동 적용
+    // (회원님이 검수에서 고친 카테고리가 저장 → 다음 추출 때 같은 가맹점이면 그 분류를 따름)
+    const normMerchant0 = (s: string) => s.trim().toLowerCase().replace(/[\s()]/g, '').replace(/주식회사|㈜/g, '');
+    const learnedCat = new Map<string, string>();
+    existingExpenses
+      .slice()
+      .sort((a, b) => a.date.localeCompare(b.date)) // 최근 값이 나중에 덮어쓰도록
+      .forEach((e) => {
+        if (e.merchant && e.category) learnedCat.set(normMerchant0(e.merchant), e.category);
+      });
+    items.forEach((item) => {
+      if (item.excluded || !item.merchant) return;
+      const learned = learnedCat.get(normMerchant0(item.merchant));
+      if (learned && learned !== item.suggestedCategory) {
+        item.suggestedCategory = learned;
+        item.confidence = 0.97;          // 학습값은 높은 신뢰도 (확인 뱃지 안 뜨게)
+        item.learnedCategory = true;
+      }
+    });
 
     // 0. 기존 DB 데이터와 중복 확인 (유사 merchant 이름 포함)
     const normMerchant = (s: string) => s.trim().toLowerCase().replace(/[\s()]/g, '').replace(/주식회사|㈜/g, '');
@@ -400,6 +421,8 @@ export default function OCRReviewPage() {
   const cancelPairCount = active.filter((i) => i.cancelledBy || i.cancels).length;
   const transferCount = active.filter((i) => i.isPaymentTransfer).length;
   const linkedTransferCount = active.filter((i) => i.linkedPaymentId || i.linkedTransferId).length;
+  const learnedCount = active.filter((i) => i.learnedCategory).length;
+  const overseasSettledCount = active.filter((i) => i.overseasSettled).length;
 
   // 필수 필드 누락 카운트
   const invalidCount = active.filter((i) => !i.amount || i.amount === 0 || !i.merchant || !i.date).length;
@@ -656,6 +679,18 @@ export default function OCRReviewPage() {
                     <path d="M3 7h8M8 4l3 3-3 3" stroke="#059669" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                   </svg>
                   {linkedTransferCount / 2}건 충전이 실제 결제와 연결 — 충전 자동 제외됐어요
+                </div>
+              )}
+              {learnedCount > 0 && (
+                <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: '#059669' }}>
+                  <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 7.5l3 3 7-7" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>
+                  {learnedCount}건 과거에 직접 정한 분류를 학습해 자동 적용했어요
+                </div>
+              )}
+              {overseasSettledCount > 0 && (
+                <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: '#059669' }}>
+                  <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 7h10M9 4l3 3-3 3" stroke="#059669" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>
+                  {overseasSettledCount}건 해외결제를 실청구액으로 통합했어요
                 </div>
               )}
               {needsReviewCount > 0 && (
@@ -1272,6 +1307,7 @@ function OCRRow({
             {!isInvalid && item.isPaymentTransfer && <Badge tone="warn" size="sm">확인 필요</Badge>}
             {!isInvalid && item.linkedTransferId && <Badge tone="accent" size="sm">연결됨</Badge>}
             {!isInvalid && item.overseasSettled && <Badge tone="accent" size="sm">해외 실청구</Badge>}
+            {!isInvalid && item.learnedCategory && <Badge tone="accent" size="sm">학습 분류</Badge>}
             {!isInvalid && item.dutchPay && (
               <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: '#EEF2FF', color: '#4F46E5', border: '1px solid #C7D2FE' }}>
                 n빵 {item.dutchPay.peopleCount}명

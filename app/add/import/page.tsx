@@ -353,7 +353,7 @@ export default function ImportPage() {
         ))}
       </div>
 
-      <ScreenBody padBottom={100}>
+      <ScreenBody padBottom={160}>
         {tabRows[activeTab].length === 0 ? (
           <div style={{ padding: '48px 20px', textAlign: 'center', color: T.textTer, fontSize: 14 }}>항목이 없어요</div>
         ) : (
@@ -467,7 +467,7 @@ export default function ImportPage() {
         )}
       </ScreenBody>
 
-      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: '12px 20px 28px', background: 'linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0))', maxWidth: 512, margin: '0 auto', zIndex: 100 }}>
+      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(60px + max(20px, env(safe-area-inset-bottom)))', padding: '12px 20px 14px', background: 'linear-gradient(to top, rgba(255,255,255,1) 72%, rgba(255,255,255,0))', maxWidth: 512, margin: '0 auto', zIndex: 101 }}>
         <PrimaryButton onClick={handleSave} disabled={selectedCount === 0 || stage === 'saving'}>
           {stage === 'saving' ? '저장 중...' : `${selectedCount}건 저장하기`}
         </PrimaryButton>

@@ -506,7 +506,7 @@ export default function OCRReviewPage() {
         }}
       />
 
-      <ScreenBody padBottom={100}>
+      <ScreenBody padBottom={160}>
         {/* 요약 배너 */}
         <div style={{ padding: '16px 20px 12px' }}>
           <div
@@ -970,12 +970,12 @@ export default function OCRReviewPage() {
             position: 'fixed',
             left: 0,
             right: 0,
-            bottom: 0,
-            padding: '12px 20px 28px',
-            background: 'linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0))',
+            bottom: 'calc(60px + max(20px, env(safe-area-inset-bottom)))',
+            padding: '12px 20px 14px',
+            background: 'linear-gradient(to top, rgba(255,255,255,1) 72%, rgba(255,255,255,0))',
             maxWidth: 512,
             margin: '0 auto',
-            zIndex: 100,
+            zIndex: 101,
           }}
         >
           <PrimaryButton onClick={handleSave} disabled={active.length === 0}>

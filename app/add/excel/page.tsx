@@ -49,7 +49,7 @@ export default function ExcelImportPage() {
   const [stage, setStage] = useState<Stage>('upload');
   const [fileBuffer, setFileBuffer] = useState<ArrayBuffer | null>(null);
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<ExcelParseResult | null>(null);
   const [activeTab, setActiveTab] = useState<ReviewTab>('include');
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -80,7 +80,7 @@ export default function ExcelImportPage() {
       try {
         const months = detectMonths(buf);
         setAvailableMonths(months);
-        setSelectedMonth(months[0] || '');
+        setSelectedMonths(new Set(months[0] ? [months[0]] : []));
       } catch {
         setError('파일을 읽을 수 없습니다. 뱅크샐러드 엑셀 파일인지 확인해주세요.');
       }
@@ -89,13 +89,13 @@ export default function ExcelImportPage() {
   }, []);
 
   const handleAnalyze = useCallback(async () => {
-    if (!fileBuffer || !selectedMonth) return;
+    if (!fileBuffer || selectedMonths.size === 0) return;
     setStage('processing');
     setError('');
     setRowCategories({});
     try {
       const existing = await getExpenses();
-      const parsed = parseExcel(fileBuffer, selectedMonth, existing, defaultTransferCat);
+      const parsed = parseExcel(fileBuffer, [...selectedMonths], existing, defaultTransferCat);
       setResult(parsed);
 
       const initSelected = new Set<number>();
@@ -109,7 +109,16 @@ export default function ExcelImportPage() {
       setError((err as Error).message || '분석 중 오류가 발생했습니다.');
       setStage('upload');
     }
-  }, [fileBuffer, selectedMonth, defaultTransferCat]);
+  }, [fileBuffer, selectedMonths, defaultTransferCat]);
+
+  const toggleMonth = useCallback((m: string) => {
+    setSelectedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(m)) next.delete(m);
+      else next.add(m);
+      return next;
+    });
+  }, []);
 
   const toggleRow = useCallback((idx: number) => {
     setSelected((prev) => {
@@ -149,6 +158,15 @@ export default function ExcelImportPage() {
     const [y, mm] = m.split('-');
     return `${y}년 ${parseInt(mm)}월`;
   };
+
+  const allMonthsSelected =
+    availableMonths.length > 0 && selectedMonths.size === availableMonths.length;
+  const selectedMonthsTitle = (() => {
+    const arr = [...selectedMonths].sort().reverse();
+    if (arr.length === 0) return '';
+    if (arr.length === 1) return monthLabel(arr[0]);
+    return `${arr.length}개월`;
+  })();
 
   // 카테고리 변경 적용
   const applyCategoryChange = useCallback(
@@ -219,24 +237,43 @@ export default function ExcelImportPage() {
 
             {availableMonths.length > 0 && (
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec, marginBottom: 10 }}>가져올 월 선택</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.textSec }}>
+                    가져올 월 선택 {selectedMonths.size > 0 && <span style={{ color: T.accent, fontWeight: 700 }}>({selectedMonths.size})</span>}
+                  </div>
+                  <button
+                    onClick={() => setSelectedMonths(allMonthsSelected ? new Set() : new Set(availableMonths))}
+                    style={{ border: 0, background: 'transparent', color: T.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0, fontFamily: 'Pretendard, system-ui, sans-serif' }}
+                  >
+                    {allMonthsSelected ? '전체 해제' : '전체 선택'}
+                  </button>
+                </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {availableMonths.map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setSelectedMonth(m)}
-                      style={{
-                        padding: '10px 16px', borderRadius: 999,
-                        border: selectedMonth === m ? `2px solid ${T.accent}` : `1px solid ${T.divider}`,
-                        background: selectedMonth === m ? T.accentSoft : T.bg,
-                        color: selectedMonth === m ? T.accent : T.text,
-                        fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                        fontFamily: 'Pretendard, system-ui, sans-serif',
-                      }}
-                    >
-                      {monthLabel(m)}
-                    </button>
-                  ))}
+                  {availableMonths.map((m) => {
+                    const on = selectedMonths.has(m);
+                    return (
+                      <button
+                        key={m}
+                        onClick={() => toggleMonth(m)}
+                        style={{
+                          padding: '10px 16px', borderRadius: 999,
+                          border: on ? `2px solid ${T.accent}` : `1px solid ${T.divider}`,
+                          background: on ? T.accentSoft : T.bg,
+                          color: on ? T.accent : T.text,
+                          fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                          fontFamily: 'Pretendard, system-ui, sans-serif',
+                          display: 'flex', alignItems: 'center', gap: 6,
+                        }}
+                      >
+                        {on && (
+                          <svg width="12" height="10" viewBox="0 0 13 10" fill="none">
+                            <path d="M1.5 5l3.5 3.5 7-7" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                        {monthLabel(m)}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -247,8 +284,8 @@ export default function ExcelImportPage() {
               </div>
             )}
 
-            <PrimaryButton onClick={handleAnalyze} disabled={!fileBuffer || !selectedMonth}>
-              분석하기
+            <PrimaryButton onClick={handleAnalyze} disabled={!fileBuffer || selectedMonths.size === 0}>
+              {selectedMonths.size > 1 ? `${selectedMonths.size}개월 분석하기` : '분석하기'}
             </PrimaryButton>
           </div>
         </ScreenBody>
@@ -281,11 +318,11 @@ export default function ExcelImportPage() {
             {savedCount}건 저장 완료
           </div>
           <div style={{ fontSize: 14, color: T.textSec, textAlign: 'center', lineHeight: 1.6 }}>
-            {monthLabel(selectedMonth)} 내역이 가계부에 추가됐어요.
+            {selectedMonthsTitle} 내역이 가계부에 추가됐어요.
           </div>
           <div style={{ width: '100%', display: 'flex', gap: 8, marginTop: 8 }}>
             <SecondaryButton
-              onClick={() => { setStage('upload'); setFileBuffer(null); setAvailableMonths([]); setSelectedMonth(''); }}
+              onClick={() => { setStage('upload'); setFileBuffer(null); setAvailableMonths([]); setSelectedMonths(new Set()); }}
               style={{ flex: 1 }}
             >
               다른 월 가져오기
@@ -317,7 +354,7 @@ export default function ExcelImportPage() {
 
   return (
     <Screen>
-      <AppHeader title={`${monthLabel(selectedMonth)} 분석 결과`} onBack={() => setStage('upload')} />
+      <AppHeader title={`${selectedMonthsTitle} 분석 결과`} onBack={() => setStage('upload')} />
 
       {/* 탭 */}
       <div style={{ padding: '12px 16px 4px', display: 'flex', gap: 6, borderBottom: `1px solid ${T.divider}` }}>

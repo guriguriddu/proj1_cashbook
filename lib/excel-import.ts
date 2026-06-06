@@ -155,10 +155,11 @@ export function detectMonths(buffer: ArrayBuffer): string[] {
 
 export function parseExcel(
   buffer: ArrayBuffer,
-  month: string,
+  monthFilter: string | string[],
   existingExpenses: Expense[],
   defaultTransferCategory = 'food'
 ): ExcelParseResult {
+  const monthSet = new Set(Array.isArray(monthFilter) ? monthFilter : [monthFilter]);
   const wb = XLSX.read(buffer, { type: 'array' });
   const ws = wb.Sheets['가계부 내역'];
   if (!ws) throw new Error('가계부 내역 시트를 찾을 수 없습니다.');
@@ -197,7 +198,7 @@ export function parseExcel(
     if (typeof serial !== 'number' || serial < 40000) return;
 
     const dateStr = serialToDate(serial);
-    if (!dateStr.startsWith(month)) return;
+    if (!monthSet.has(dateStr.slice(0, 7))) return;
 
     const type = String(row[2] || '');
     const bigCat = String(row[3] || '');
@@ -394,7 +395,7 @@ export function parseExcel(
     });
 
   // 4단계: 기존 DB 중복 체크
-  const existingThisMonth = existingExpenses.filter((e) => e.date.startsWith(month));
+  const existingThisMonth = existingExpenses.filter((e) => monthSet.has(e.date.slice(0, 7)));
   parsed
     .filter((r) => ['include', 'dutch_pay', 'finance_nudge', 'transfer_nudge'].includes(r.status))
     .forEach((row) => {

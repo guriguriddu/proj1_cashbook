@@ -376,6 +376,19 @@ export default function ExcelImportPage() {
     { id: 'excluded', label: '제외됨', count: result.excluded.length },
   ];
 
+  // 현재 탭 전체 선택/해제
+  const currentTabRows = tabRows[activeTab];
+  const allInTabSelected =
+    activeTab !== 'excluded' && currentTabRows.length > 0 && currentTabRows.every((r) => selected.has(r.idx));
+  const toggleAllInTab = () => {
+    const turnOn = !allInTabSelected;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      currentTabRows.forEach((r) => { if (turnOn) next.add(r.idx); else next.delete(r.idx); });
+      return next;
+    });
+  };
+
   return (
     <Screen>
       <AppHeader title={`${selectedMonthsTitle} 분석 결과`} onBack={() => setStage('upload')} />
@@ -434,6 +447,19 @@ export default function ExcelImportPage() {
           <div style={{ padding: '48px 20px', textAlign: 'center', color: T.textTer, fontSize: 14 }}>항목이 없어요</div>
         ) : (
           <div style={{ padding: '8px 0' }}>
+            {activeTab !== 'excluded' && currentTabRows.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 16px 8px' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: T.textSec }}>
+                  이 탭 {currentTabRows.length}건 중 <span style={{ color: T.accent, fontWeight: 800 }}>{currentTabRows.filter((r) => selected.has(r.idx)).length}</span>건 선택
+                </span>
+                <button
+                  onClick={toggleAllInTab}
+                  style={{ border: 0, background: 'transparent', color: T.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0, fontFamily: 'Pretendard, system-ui, sans-serif' }}
+                >
+                  {allInTabSelected ? '전체 해제' : '전체 선택'}
+                </button>
+              </div>
+            )}
             {activeTab === 'review' && result.needsReview.some((r) => r.status === 'duplicate_suspect') && (
               <div style={{ margin: '8px 16px 12px', padding: '12px 14px', background: T.dangerSoft, borderRadius: 12, fontSize: 12, color: T.danger, fontWeight: 600, lineHeight: 1.6 }}>
                 ⚠️ 중복 의심 항목은 기본적으로 미선택 상태입니다. 확인 후 필요하면 직접 선택하세요.

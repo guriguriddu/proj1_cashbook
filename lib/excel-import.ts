@@ -1,7 +1,8 @@
 import * as XLSX from 'xlsx';
 import type { Expense } from '@/types';
+import { DEFAULT_CATEGORIES } from '@/constants/categories';
 
-// 뱅샐 대분류 → 앱 카테고리 ID
+// 뱅샐 대분류 → 앱 카테고리 ID (학습·키워드로 분류 못 했을 때의 최후 fallback)
 const CAT_MAP: Record<string, string> = {
   '식비': 'food',
   '카페/간식': 'cafe',
@@ -89,6 +90,20 @@ function merchantSimilar(a: string, b: string): boolean {
   const nb = normMerchant(b);
   if (!na || !nb) return false;
   return na === nb || na.includes(nb) || nb.includes(na);
+}
+
+// 가맹점명 → 앱 카테고리 키워드 매칭 ("내 카테고리 체계"로 분류)
+// 짧은 키워드 오매칭을 줄이려고 2자 이상 키워드만 사용한다.
+function categorizeByMerchant(merchant: string): string | null {
+  const m = normMerchant(merchant);
+  if (!m) return null;
+  for (const cat of DEFAULT_CATEGORIES) {
+    for (const kw of cat.keywords) {
+      const k = normMerchant(kw);
+      if (k.length >= 2 && m.includes(k)) return cat.id;
+    }
+  }
+  return null;
 }
 
 // 해외결제 실청구(확정환율) 항목 가맹점 패턴 (OCR 검수와 동일)
@@ -243,9 +258,11 @@ export function parseExcel(
         return;
       }
 
+      // 분류 우선순위: 학습(과거 내 분류) → 가맹점 키워드(내 카테고리 체계) → 뱅샐 대분류(최후)
       const baseCategory = CAT_MAP[bigCat] || 'other';
       const learned = learnedCatMap.get(normMerchant(merchant));
-      const category = learned ?? baseCategory;
+      const keywordCat = learned ? null : categorizeByMerchant(merchant);
+      const category = learned ?? keywordCat ?? baseCategory;
       const isFinance = bigCat === '금융';
 
       parsed.push({

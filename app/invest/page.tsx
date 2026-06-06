@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Screen, ScreenBody, T, BottomSheet, PrimaryButton } from '@/components/ui';
-import { getInvestSettings, saveInvestSettings } from '@/lib/supabase-storage';
+import { getInvestSettings, saveInvestSettings, getExpenses } from '@/lib/supabase-storage';
 import {
   calcIncomeTax, calcDividendTax, calcCapitalGainTax,
   formatWon, fmtPct,
   calcYearendDeduction,
+  summarizeSpendByPay,
   type YearendInputs,
+  type SpendByPay,
 } from '@/lib/invest-tax';
 import { SectionCard, InputRow, ToggleRow, ResultRow, InfoBanner, NumberEditSheet } from '@/components/invest-ui';
 
@@ -56,6 +58,18 @@ export default function InvestPage() {
     transit: 0,
   });
 
+  // 올해 가계부에서 결제수단별 소비 자동 집계 → 계산기 자동 채움 (이후 사용자가 수정 가능)
+  const currentYear = new Date().getFullYear();
+  const [spendByPay, setSpendByPay] = useState<SpendByPay | null>(null);
+
+  useEffect(() => {
+    getExpenses().then((items) => {
+      const s = summarizeSpendByPay(items, currentYear);
+      setSpendByPay(s);
+      setYearendInputs((p) => ({ ...p, creditCard: s.credit, checkCard: s.check, transit: s.transit }));
+    });
+  }, [currentYear]);
+
   // 배당 계산기 입력값
   const [divInputs, setDivInputs] = useState({
     grossDividend: 5_000_000,
@@ -87,6 +101,12 @@ export default function InvestPage() {
     yearendInputs.totalSalary > 0 ? yearendInputs : { ...yearendInputs, totalSalary: laborIncome }
   );
   const effectiveSalary = yearendInputs.totalSalary > 0 ? yearendInputs.totalSalary : laborIncome;
+
+  // 연말정산 추천 (신용+체크가 총급여 25% 문턱을 넘었는지)
+  const yeThreshold = Math.floor(effectiveSalary * 0.25);
+  const deductibleSpend = yearendInputs.creditCard + yearendInputs.checkCard;
+  const belowThreshold = deductibleSpend < yeThreshold;
+  const remainToThreshold = Math.max(0, yeThreshold - deductibleSpend);
 
   // 계산
   const divResult = calcDividendTax({ ...divInputs, laborIncome });
@@ -663,6 +683,63 @@ export default function InvestPage() {
                 ))}
               </div>
             </div>
+
+            {/* 올해 가계부 기반 결제수단별 사용액 */}
+            {spendByPay && spendByPay.total > 0 && (
+              <SectionCard title={`${currentYear}년 결제수단별 사용액 (가계부)`}>
+                {[
+                  { label: '신용카드', val: spendByPay.credit, color: T.textSec },
+                  { label: '체크카드 · 현금영수증', val: spendByPay.check, color: T.accent },
+                  { label: '대중교통', val: spendByPay.transit, color: '#059669' },
+                ].map((r) => (
+                  <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 16px', borderBottom: `1px solid ${T.divider}` }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{r.label}</span>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: r.color, fontVariantNumeric: 'tabular-nums' }}>{formatWon(r.val)}</span>
+                  </div>
+                ))}
+                {spendByPay.other > 0 && (
+                  <div style={{ padding: '13px 16px', borderBottom: `1px solid ${T.divider}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: T.textTer }}>분류 불가 (간편결제·계좌이체)</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: T.textTer, fontVariantNumeric: 'tabular-nums' }}>{formatWon(spendByPay.other)}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textTer, marginTop: 4, lineHeight: 1.5 }}>
+                      간편결제·계좌이체는 실제 결제 카드를 알 수 없어 제외됐어요. 연결된 카드 기준으로 아래 계산기에서 직접 더해주세요.
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 16px' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: T.textSec }}>합계</span>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: T.text, fontVariantNumeric: 'tabular-nums' }}>{formatWon(spendByPay.total)}</span>
+                </div>
+              </SectionCard>
+            )}
+
+            {/* 맞춤 추천 */}
+            {effectiveSalary > 0 && spendByPay && spendByPay.total > 0 && (
+              <div style={{
+                background: belowThreshold ? T.bgSoft : T.accentSoft,
+                borderRadius: 16, padding: '14px 16px',
+                fontSize: 13, lineHeight: 1.65, color: T.text,
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: belowThreshold ? T.textSec : T.accent, marginBottom: 4 }}>
+                  💡 맞춤 추천
+                </div>
+                {belowThreshold ? (
+                  <>
+                    아직 <b>총급여의 25%</b>({formatWon(yeThreshold)})를 못 채웠어요. 여기까진 어떤 카드든 공제가 없으니
+                    <b> 혜택 좋은 신용카드</b>로 쓰는 게 유리해요.{' '}
+                    공제를 받으려면 <b>{formatWon(remainToThreshold)}</b>를 더 써서 25% 구간을 넘겨야 해요.
+                  </>
+                ) : (
+                  <>
+                    <b>공제 구간 진입!</b> 25%({formatWon(yeThreshold)})를 넘겼어요. 지금부터 쓰는 돈은
+                    <b> 체크카드·현금영수증이 30%</b>로 신용카드(15%)보다 <b>2배</b> 공제돼요.{' '}
+                    앞으로는 체크카드·현금영수증 위주로 — 1만원당 약 1,500원 더 공제받아요.
+                  </>
+                )}
+              </div>
+            )}
 
             {/* 공제율 비교표 */}
             <SectionCard title="결제수단별 공제율">

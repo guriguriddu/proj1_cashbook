@@ -187,6 +187,48 @@ export interface YearendInputs {
   transit: number;
 }
 
+// ─── 결제수단 → 소득공제 버킷 분류 ───────────────────────────────────────────
+// credit: 신용카드(15%) / check: 체크카드·현금영수증(30%) / transit: 대중교통(40% 별도)
+// other: 간편결제·계좌이체 등 실제 결제수단 미상(공제 분류 불가)
+export type PayBucket = 'credit' | 'check' | 'transit' | 'other';
+
+export function classifyPayMethod(payMethod?: string, category?: string): PayBucket {
+  // 대중교통은 카테고리로 판별 (별도 한도 40%)
+  if (category === 'transport') return 'transit';
+  const s = (payMethod || '').toLowerCase();
+  if (!s) return 'other';
+  // 체크카드·현금영수증 (신용보다 먼저 검사 — "체크카드"에 '카드'가 들어가므로)
+  if (/체크|check|현금영수증|현금/.test(s)) return 'check';
+  // 신용카드
+  if (/카드|card|신용/.test(s)) return 'credit';
+  // 간편결제(머니/페이)·계좌이체·통장 등 → 실제 수단 미상
+  return 'other';
+}
+
+export interface SpendByPay {
+  credit: number;
+  check: number;
+  transit: number;
+  other: number;
+  total: number;
+}
+
+// 특정 연도의 결제수단별 소비 합계
+export function summarizeSpendByPay(
+  items: { amount: number; payMethod?: string; category: string; date: string }[],
+  year: number
+): SpendByPay {
+  const sum: SpendByPay = { credit: 0, check: 0, transit: 0, other: 0, total: 0 };
+  const yp = String(year);
+  for (const e of items) {
+    if (!e.date.startsWith(yp)) continue;
+    const bucket = classifyPayMethod(e.payMethod, e.category);
+    sum[bucket] += e.amount;
+    sum.total += e.amount;
+  }
+  return sum;
+}
+
 export function calcYearendDeduction(inputs: YearendInputs) {
   const { totalSalary, creditCard, checkCard, traditional, transit } = inputs;
   const threshold = Math.floor(totalSalary * 0.25);

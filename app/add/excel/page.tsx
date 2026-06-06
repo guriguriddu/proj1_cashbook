@@ -338,7 +338,9 @@ export default function ExcelImportPage() {
   if (!result) return null;
 
   const allRows = [...result.toInclude, ...result.needsReview];
-  const selectedCount = allRows.filter((r) => selected.has(r.idx)).length;
+  const selectedRows = allRows.filter((r) => selected.has(r.idx));
+  const selectedCount = selectedRows.length;
+  const selectedAmount = selectedRows.reduce((s, r) => s + r.amount, 0);
 
   const tabRows: Record<ReviewTab, ParsedRow[]> = {
     include: result.toInclude,
@@ -355,6 +357,16 @@ export default function ExcelImportPage() {
   return (
     <Screen>
       <AppHeader title={`${selectedMonthsTitle} 분석 결과`} onBack={() => setStage('upload')} />
+
+      {/* 선택 합계 — 가져올 항목 + 확인 필요 중 체크된 항목 금액 합 */}
+      <div style={{ padding: '14px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: T.textSec }}>
+          선택한 <span style={{ color: T.accent, fontWeight: 800 }}>{selectedCount}</span>건 합계
+        </span>
+        <span style={{ fontSize: 24, fontWeight: 800, color: T.text, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+          {formatWon(selectedAmount)}
+        </span>
+      </div>
 
       {/* 탭 */}
       <div style={{ padding: '12px 16px 4px', display: 'flex', gap: 6, borderBottom: `1px solid ${T.divider}` }}>

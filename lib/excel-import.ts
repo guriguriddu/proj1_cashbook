@@ -27,6 +27,7 @@ export type RowStatus =
   | 'dutch_pay'         // n빵 감지됨 → 가져올 항목 (순금액)
   | 'transfer_nudge'    // 이체(타인) → 확인필요, 기본 선택
   | 'finance_nudge'     // 금융 지출 → 확인필요, 기본 선택
+  | 'charge_nudge'      // 간편결제 충전(실결제 못 찾음) → 확인필요, 기본 미선택
   | 'duplicate_suspect' // 중복 의심 → 확인필요, 기본 미선택
   | 'refund_cancel'     // 환불로 상계됨 → 제외
   | 'refund_partial'    // 부분환불(금액불일치) → 확인필요, 기본 미선택
@@ -48,6 +49,10 @@ export interface ParsedRow {
   selected: boolean;
   refundPartnerIdx?: number;
   dupExpenseId?: string;
+  learnedCategory?: boolean;       // 과거 분류 학습으로 카테고리 자동 적용됨
+  overseasSettled?: boolean;       // 해외결제 실청구액으로 금액 교체됨
+  overseasOriginalAmount?: number; // 교체 전(가결제) 금액
+  chargeLinkedIdx?: number;        // 충전↔실결제 연결 상대 행 idx
   dutchPay?: {
     originalAmount: number;
     receivedTotal: number;
@@ -73,12 +78,23 @@ function serialToDate(serial: number): string {
   return `${y}-${m}-${day}`;
 }
 
+// 가맹점명 정규화 (학습/중복 매칭 공용)
+function normMerchant(s: string): string {
+  return s.trim().toLowerCase().replace(/[\s()]/g, '').replace(/주식회사|㈜/g, '');
+}
+
 function merchantSimilar(a: string, b: string): boolean {
-  const norm = (s: string) => s.toLowerCase().replace(/[\s()]/g, '').replace(/주식회사|㈜/g, '');
-  const na = norm(a);
-  const nb = norm(b);
+  const na = normMerchant(a);
+  const nb = normMerchant(b);
   if (!na || !nb) return false;
   return na === nb || na.includes(nb) || nb.includes(na);
+}
+
+// 해외결제 실청구(확정환율) 항목 가맹점 패턴
+const OVERSEAS_SETTLE = /비자해외|마스터해외|해외승인대금|해외이용대금|해외매입|해외매출|해외승인/;
+
+function daysApart(a: string, b: string): number {
+  return Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86400000);
 }
 
 function addDays(dateStr: string, days: number): string {
@@ -149,6 +165,16 @@ export function parseExcel(
 
   const rawRows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 }).slice(1) as unknown[][];
 
+  // 0-pre단계: 학습 — 과거 저장 내역에서 가맹점→카테고리를 기억(최근 값 우선)
+  // 회원님이 직접 정한 분류를 같은 가맹점에 자동 적용한다.
+  const learnedCatMap = new Map<string, string>();
+  existingExpenses
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date)) // 최근 값이 나중에 덮어쓰도록
+    .forEach((e) => {
+      if (e.merchant && e.category) learnedCatMap.set(normMerchant(e.merchant), e.category);
+    });
+
   // 0단계: 파일 전체에서 입금 이체 수집 (n빵 감지용, 월 필터 없음)
   const incomingPool: { date: string; amount: number; used: boolean }[] = [];
   rawRows.forEach((row) => {
@@ -208,13 +234,16 @@ export function parseExcel(
         return;
       }
 
-      // 간편결제 충전 제외
+      // 간편결제 충전 — 무조건 제외하지 않고 일단 보류.
+      // 같은 날·같은 금액 실제 결제와 연결되면 제외(중복방지), 못 찾으면 확인필요로 남김(아래 단계).
       if (smallCat === '결제/충전') {
-        parsed.push({ ...base, amount: Math.abs(amount), category: 'other', status: 'excluded', excludeReason: '간편결제 충전 (실소비 별도 기록됨)', selected: false });
+        parsed.push({ ...base, amount: Math.abs(amount), category: 'other', status: 'charge_nudge', nudgeMessage: '간편결제 충전입니다. 같은 날 실제 결제가 있으면 자동 제외돼요.', selected: false });
         return;
       }
 
-      const category = CAT_MAP[bigCat] || 'other';
+      const baseCategory = CAT_MAP[bigCat] || 'other';
+      const learned = learnedCatMap.get(normMerchant(merchant));
+      const category = learned ?? baseCategory;
       const isFinance = bigCat === '금융';
 
       parsed.push({
@@ -223,6 +252,7 @@ export function parseExcel(
         category,
         status: isFinance ? 'finance_nudge' : 'include',
         nudgeMessage: isFinance ? '금융 항목입니다. 실소비가 맞다면 가져오세요.' : undefined,
+        learnedCategory: !!learned && learned !== baseCategory,
         selected: true,
       });
       return;
@@ -247,14 +277,16 @@ export function parseExcel(
         return;
       }
 
-      // 타인 송금 (대분류='이체'): 기본 카테고리 = defaultTransferCategory(기본 식비), 확인필요
+      // 타인 송금 (대분류='이체'): 학습값 있으면 우선, 없으면 defaultTransferCategory(기본 식비), 확인필요
       if (bigCat === '이체') {
+        const learnedT = learnedCatMap.get(normMerchant(merchant));
         parsed.push({
           ...base,
           amount: Math.abs(amount),
-          category: defaultTransferCategory,
+          category: learnedT ?? defaultTransferCategory,
           status: 'transfer_nudge',
           nudgeMessage: '타인에게 보낸 이체입니다. 더치페이 등 실소비라면 포함하세요.',
+          learnedCategory: !!learnedT,
           selected: true,
         });
         return;
@@ -292,6 +324,27 @@ export function parseExcel(
     }
   });
 
+  // 2.5단계: 충전 ↔ 실제 결제 연결
+  // 충전을 무조건 제외하면 실소비가 누락될 수 있으므로, 같은 날·같은 금액의 실제 결제가
+  // 있을 때만 충전을 제외(중복방지)하고, 못 찾으면 'charge_nudge'(확인필요)로 남긴다.
+  const charges = parsed.filter((r) => r.status === 'charge_nudge');
+  const payRows = parsed.filter((r) => r.status === 'include');
+  charges.forEach((charge) => {
+    const pay = payRows.find(
+      (p) =>
+        p.amount === charge.amount &&
+        p.date === charge.date &&
+        p.chargeLinkedIdx === undefined &&
+        !/송금|이체/.test(p.merchant) // 타인 송금/이체는 '결제'로 보지 않음
+    );
+    if (pay) {
+      charge.status = 'excluded';
+      charge.excludeReason = '실제 결제와 연결 (충전 자동 제외)';
+      charge.chargeLinkedIdx = pay.idx;
+      pay.chargeLinkedIdx = charge.idx;
+    }
+  });
+
   // 3단계: n빵 자동 감지 (식비 2만원 이상)
   parsed
     .filter((r) => r.status === 'include' && r.category === 'food' && r.amount >= 20000)
@@ -313,6 +366,33 @@ export function parseExcel(
       row.nudgeMessage = `n빵 감지 · ${match.N}명 · 받은 금액 ${match.receivedTotal.toLocaleString()}원`;
     });
 
+  // 3.5단계: 해외결제 가결제 ↔ 실청구 통합 (보수적)
+  // 해외 카드결제는 가결제(추정환율)와 실청구(비자해외승인대금 등, 확정환율)가 둘 다 뜨고
+  // 금액이 환율로 조금 다르다. 실청구는 가맹점명이 없으니, 같은 금액(±5%)·날짜(±7일)인
+  // 가결제가 정확히 1건일 때만 가결제 금액을 실청구액으로 바꾸고 실청구는 제외한다.
+  parsed
+    .filter((s) => s.status !== 'excluded' && s.status !== 'refund_cancel' && OVERSEAS_SETTLE.test(s.merchant))
+    .forEach((settle) => {
+      const candidates = parsed.filter(
+        (p) =>
+          p !== settle &&
+          (p.status === 'include' || p.status === 'dutch_pay') &&
+          !p.overseasSettled &&
+          !OVERSEAS_SETTLE.test(p.merchant) &&
+          settle.amount > 0 &&
+          Math.abs(p.amount - settle.amount) / settle.amount <= 0.05 &&
+          daysApart(p.date, settle.date) <= 7
+      );
+      if (candidates.length === 1) {
+        const prov = candidates[0];
+        prov.overseasSettled = true;
+        prov.overseasOriginalAmount = prov.amount;
+        prov.amount = settle.amount; // 실청구액으로 교체
+        settle.status = 'excluded';
+        settle.excludeReason = '해외결제 실청구액으로 통합';
+      }
+    });
+
   // 4단계: 기존 DB 중복 체크
   const existingThisMonth = existingExpenses.filter((e) => e.date.startsWith(month));
   parsed
@@ -332,7 +412,7 @@ export function parseExcel(
   // 5단계: 결과 분류
   const toInclude = parsed.filter((r) => r.status === 'include' || r.status === 'dutch_pay');
   const needsReview = parsed.filter((r) =>
-    ['transfer_nudge', 'finance_nudge', 'duplicate_suspect', 'refund_partial'].includes(r.status)
+    ['transfer_nudge', 'finance_nudge', 'charge_nudge', 'duplicate_suspect', 'refund_partial'].includes(r.status)
   );
   const excluded = parsed.filter((r) => r.status === 'excluded' || r.status === 'refund_cancel');
   const months = [...new Set(parsed.map((r) => r.date.slice(0, 7)))].sort().reverse();

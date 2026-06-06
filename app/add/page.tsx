@@ -116,11 +116,27 @@ export default function AddPage() {
             badge={<Badge tone="purple" size="md">NEW</Badge>}
           />
 
-          {/* 파일 가져오기 */}
+          {/* 엑셀(뱅크샐러드) — 무료 로컬 분석 */}
           <ChoiceCard
-            onClick={() => router.push('/add/import')}
+            onClick={() => router.push('/add/excel')}
             iconBg="#E8F5E9"
             iconColor="#16A34A"
+            icon={
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                <rect x="3" y="5" width="22" height="18" rx="2.5" stroke="currentColor" strokeWidth="2" />
+                <path d="M3 11h22M3 17h22M11 5v18M19 5v18" stroke="currentColor" strokeWidth="1.6" />
+              </svg>
+            }
+            title="엑셀 (뱅크샐러드)"
+            desc="뱅크샐러드 .xlsx → 바로 무료로 불러오기"
+            badge={<Badge tone="accent" size="md">무료</Badge>}
+          />
+
+          {/* 파일 가져오기 — AI 분석 (엑셀·PDF) */}
+          <ChoiceCard
+            onClick={() => router.push('/add/import')}
+            iconBg="#EFF6FF"
+            iconColor="#2563EB"
             icon={
               <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
                 <rect x="4" y="3" width="14" height="22" rx="2" stroke="currentColor" strokeWidth="2" />
@@ -129,8 +145,9 @@ export default function AddPage() {
                 <path d="M8 14l3 3 3-3M11 17v-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             }
-            title="파일 가져오기"
-            desc="엑셀·PDF → AI가 자동으로 분석 (.xlsx / .pdf)"
+            title="파일 가져오기 (AI)"
+            desc="PDF 명세서·복잡한 엑셀 → AI가 자동 분석 (.xlsx / .pdf)"
+            badge={<Badge tone="blue" size="md">AI</Badge>}
           />
 
           {/* 직접 입력 */}

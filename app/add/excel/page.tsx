@@ -35,6 +35,7 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   dutch_pay: { label: 'n빵', color: '#F97316' },
   transfer_nudge: { label: '이체', color: '#F59E0B' },
   finance_nudge: { label: '금융', color: '#F59E0B' },
+  charge_nudge: { label: '충전', color: '#F59E0B' },
   duplicate_suspect: { label: '중복의심', color: T.danger },
   refund_partial: { label: '부분환불', color: '#6366F1' },
   refund_cancel: { label: '상계됨', color: T.textTer },
@@ -360,7 +361,6 @@ export default function ExcelImportPage() {
               const isChecked = selected.has(row.idx);
               const statusInfo = STATUS_LABEL[row.status] ?? { label: row.status, color: T.textTer };
               const isDutchPay = row.status === 'dutch_pay';
-              const isTransfer = row.status === 'transfer_nudge';
 
               return (
                 <div
@@ -425,6 +425,16 @@ export default function ExcelImportPage() {
                       <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: statusInfo.color + '18', color: statusInfo.color }}>
                         {statusInfo.label}
                       </span>
+                      {row.overseasSettled && (
+                        <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: T.accent + '18', color: T.accent }}>
+                          해외 실청구
+                        </span>
+                      )}
+                      {row.learnedCategory && (
+                        <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: T.accent + '18', color: T.accent }}>
+                          학습
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: 11, color: T.textTer, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       <span>{row.date}</span>
@@ -455,6 +465,11 @@ export default function ExcelImportPage() {
                     {isDutchPay && row.dutchPay && (
                       <div style={{ fontSize: 10, color: T.textTer, textDecoration: 'line-through', fontVariantNumeric: 'tabular-nums' }}>
                         {formatWon(row.dutchPay.originalAmount)}
+                      </div>
+                    )}
+                    {row.overseasSettled && row.overseasOriginalAmount != null && (
+                      <div style={{ fontSize: 10, color: T.textTer, textDecoration: 'line-through', fontVariantNumeric: 'tabular-nums' }}>
+                        {formatWon(row.overseasOriginalAmount)}
                       </div>
                     )}
                   </div>

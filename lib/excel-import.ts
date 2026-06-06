@@ -90,8 +90,8 @@ function merchantSimilar(a: string, b: string): boolean {
   return na === nb || na.includes(nb) || nb.includes(na);
 }
 
-// 해외결제 실청구(확정환율) 항목 가맹점 패턴
-const OVERSEAS_SETTLE = /비자해외|마스터해외|해외승인대금|해외이용대금|해외매입|해외매출|해외승인/;
+// 해외결제 실청구(확정환율) 항목 가맹점 패턴 (OCR 검수와 동일)
+const OVERSEAS_SETTLE = /비자해외|마스터해외|해외승인대금|해외이용대금|해외매입|해외매출/;
 
 function daysApart(a: string, b: string): number {
   return Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86400000);
@@ -103,38 +103,35 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().split('T')[0];
 }
 
-// n빵 감지: food 지출 + 7일 내 입금 이체에서 N등분 패턴 탐색
+// n빵 감지: 식비·카페 지출 + 30일 내 입금 이체에서 N등분 패턴 탐색.
+// OCR 검수(findDutchSplit)와 동일한 타이트 기준 — 느슨하게 잡으면 무관한 입금이
+// 우연히 매칭돼 내 몫이 음수가 되는 등 오류가 난다. 그래서 엄격히 본다:
+//  - N명이면 나머지 N-1명이 "각자 ≈ 금액/N"을 보내야 함 (정확히 N-1건 매칭)
+//  - 내 몫(= 금액 - 받은합)도 "≈ 금액/N"이어야 함
+// 두 조건을 모두 만족할 때만 n빵으로 인정.
 function findDutchPay(
   expenseAmount: number,
   expenseDate: string,
   pool: { date: string; amount: number; used: boolean }[]
-): { N: number; transfers: typeof pool; receivedTotal: number } | null {
-  const deadline = addDays(expenseDate, 7);
+): { N: number; transfers: { date: string; amount: number; used: boolean }[]; receivedTotal: number; myShare: number } | null {
+  const deadline = addDays(expenseDate, 30);
   const candidates = pool.filter(
     (t) => !t.used && t.date >= expenseDate && t.date <= deadline
   );
   if (candidates.length === 0) return null;
 
-  let best: { N: number; transfers: typeof pool; receivedTotal: number } | null = null;
-
   for (let N = 2; N <= 8; N++) {
     const perPerson = expenseAmount / N;
-    const tolerance = perPerson * 0.15;
-    const matching = candidates.filter((t) => Math.abs(t.amount - perPerson) <= tolerance);
-
-    if (matching.length === 0) continue;
-
-    const receivedTotal = matching.reduce((s, t) => s + t.amount, 0);
-    // 받은 금액이 전체의 30% 이상이어야 의미 있는 n빵
-    if (receivedTotal < expenseAmount * 0.3) continue;
-
-    // 더 많은 매칭이 있는 N을 우선
-    if (!best || matching.length > best.transfers.length) {
-      best = { N, transfers: matching, receivedTotal };
-    }
+    const tol = perPerson * 0.05; // 1/N 대비 95~105%만 허용 (반올림·소액 차이)
+    const matched = candidates.filter((t) => Math.abs(t.amount - perPerson) <= tol);
+    if (matched.length !== N - 1) continue;            // 나머지 N-1명이 각자 1/N
+    const receivedTotal = matched.reduce((s, t) => s + t.amount, 0);
+    const myShare = expenseAmount - receivedTotal;
+    if (Math.abs(myShare - perPerson) > tol) continue; // 내 몫도 1/N 수준
+    return { N, transfers: matched, receivedTotal, myShare: Math.max(0, myShare) };
   }
 
-  return best;
+  return null;
 }
 
 // 파일에서 존재하는 월 목록만 추출
@@ -346,23 +343,22 @@ export function parseExcel(
     }
   });
 
-  // 3단계: n빵 자동 감지 (식비 2만원 이상)
+  // 3단계: n빵 자동 감지 (식비·카페 1.5만원 이상 — OCR 검수와 동일)
   parsed
-    .filter((r) => r.status === 'include' && r.category === 'food' && r.amount >= 20000)
+    .filter((r) => r.status === 'include' && ['food', 'cafe'].includes(r.category) && r.amount >= 15000)
     .sort((a, b) => a.date.localeCompare(b.date)) // 날짜순으로 처리
     .forEach((row) => {
       const match = findDutchPay(row.amount, row.date, incomingPool);
       if (!match) return;
 
       match.transfers.forEach((t) => (t.used = true));
-      const myShare = row.amount - match.receivedTotal;
       row.dutchPay = {
         originalAmount: row.amount,
         receivedTotal: match.receivedTotal,
-        myShare,
+        myShare: match.myShare,
         peopleCount: match.N,
       };
-      row.amount = myShare;
+      row.amount = match.myShare;
       row.status = 'dutch_pay';
       row.nudgeMessage = `n빵 감지 · ${match.N}명 · 받은 금액 ${match.receivedTotal.toLocaleString()}원`;
     });

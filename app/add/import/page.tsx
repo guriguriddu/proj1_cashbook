@@ -127,6 +127,7 @@ export default function ImportPage() {
         memo: r.rawBigCat && r.rawBigCat !== r.rawSmallCat && r.rawSmallCat ? r.rawSmallCat : '',
         source: 'manual' as const,
         createdAt: new Date().toISOString(),
+        payMethod: r.payMethod || undefined,
       }));
       await saveExpenses(expenses);
       const dates = expenses.map(e => e.date).sort();

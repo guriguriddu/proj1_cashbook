@@ -9,6 +9,7 @@ export interface Expense {
   createdAt: string // ISO timestamp
   source: 'ocr' | 'manual' // 입력 방식
   imageUrl?: string // 영수증/캡쳐 이미지 URL
+  payMethod?: string // 결제수단 (뱅크샐러드 엑셀의 카드/계좌명) — 연말정산 소득공제 집계용
 }
 
 // 카테고리 타입

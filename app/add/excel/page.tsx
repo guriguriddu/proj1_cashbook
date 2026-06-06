@@ -146,6 +146,7 @@ export default function ExcelImportPage() {
         memo: r.rawBigCat !== r.rawSmallCat && r.rawSmallCat !== '미분류' ? r.rawSmallCat : '',
         source: 'manual' as const,
         createdAt: new Date().toISOString(),
+        payMethod: r.payMethod || undefined,
       }));
       await saveExpenses(expenses);
       setSavedCount(expenses.length);

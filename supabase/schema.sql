@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS expenses (
   category_id TEXT NOT NULL,
   memo TEXT DEFAULT '',
   source TEXT DEFAULT 'manual',
+  pay_method TEXT,
+  image_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

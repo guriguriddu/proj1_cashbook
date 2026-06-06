@@ -19,6 +19,7 @@ interface ExpenseRow {
   source: string;
   created_at: string;
   image_url?: string;
+  pay_method?: string;
 }
 
 interface CategoryRow {
@@ -118,6 +119,7 @@ export async function getExpenses(): Promise<Expense[]> {
     source: e.source as 'ocr' | 'manual',
     createdAt: e.created_at,
     imageUrl: e.image_url,
+    payMethod: e.pay_method || undefined,
   }));
 }
 
@@ -139,6 +141,7 @@ export async function saveExpense(expense: Expense): Promise<void> {
     memo: expense.memo || '',
     source: expense.source || 'manual',
     image_url: expense.imageUrl || null,
+    pay_method: expense.payMethod || null,
   });
 
   if (error) {
@@ -165,6 +168,7 @@ export async function saveExpenses(newExpenses: Expense[]): Promise<void> {
     memo: e.memo || '',
     source: e.source || 'manual',
     image_url: e.imageUrl || null,
+    pay_method: e.payMethod || null,
   }));
 
   const { error } = await supabase.from('expenses').insert(inserts);
@@ -192,6 +196,7 @@ export async function updateExpense(
   if (updates.merchant !== undefined) updateData.merchant = updates.merchant;
   if (updates.category !== undefined) updateData.category_id = updates.category;
   if (updates.memo !== undefined) updateData.memo = updates.memo;
+  if (updates.payMethod !== undefined) updateData.pay_method = updates.payMethod;
 
   const { error } = await supabase
     .from('expenses')
@@ -259,6 +264,7 @@ export async function getExpensesByMonth(month: string): Promise<Expense[]> {
     source: e.source as 'ocr' | 'manual',
     createdAt: e.created_at,
     imageUrl: e.image_url,
+    payMethod: e.pay_method || undefined,
   }));
 }
 
@@ -296,6 +302,7 @@ export async function getExpensesByDateRange(
     source: e.source as 'ocr' | 'manual',
     createdAt: e.created_at,
     imageUrl: e.image_url,
+    payMethod: e.pay_method || undefined,
   }));
 }
 

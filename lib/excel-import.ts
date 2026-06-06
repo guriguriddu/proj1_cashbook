@@ -58,6 +58,7 @@ export interface ParsedRow {
     receivedTotal: number;
     myShare: number;
     peopleCount: number;
+    transfers?: { date: string; amount: number; merchant: string }[]; // 받은 입금 내역(누가·얼마·언제)
   };
 }
 
@@ -109,11 +110,13 @@ function addDays(dateStr: string, days: number): string {
 //  - N명이면 나머지 N-1명이 "각자 ≈ 금액/N"을 보내야 함 (정확히 N-1건 매칭)
 //  - 내 몫(= 금액 - 받은합)도 "≈ 금액/N"이어야 함
 // 두 조건을 모두 만족할 때만 n빵으로 인정.
+type IncomingTransfer = { date: string; amount: number; merchant: string; used: boolean };
+
 function findDutchPay(
   expenseAmount: number,
   expenseDate: string,
-  pool: { date: string; amount: number; used: boolean }[]
-): { N: number; transfers: { date: string; amount: number; used: boolean }[]; receivedTotal: number; myShare: number } | null {
+  pool: IncomingTransfer[]
+): { N: number; transfers: IncomingTransfer[]; receivedTotal: number; myShare: number } | null {
   const deadline = addDays(expenseDate, 30);
   const candidates = pool.filter(
     (t) => !t.used && t.date >= expenseDate && t.date <= deadline
@@ -174,16 +177,17 @@ export function parseExcel(
     });
 
   // 0단계: 파일 전체에서 입금 이체 수집 (n빵 감지용, 월 필터 없음)
-  const incomingPool: { date: string; amount: number; used: boolean }[] = [];
+  const incomingPool: IncomingTransfer[] = [];
   rawRows.forEach((row) => {
     const serial = row[0];
     if (typeof serial !== 'number' || serial < 40000) return;
     const type = String(row[2] || '');
     const bigCat = String(row[3] || '');
+    const inMerchant = String(row[5] || '').trim();
     const amount = Number(row[6]);
     const currency = String(row[7] || 'KRW');
     if (type === '이체' && amount > 0 && currency === 'KRW' && bigCat !== '내계좌이체') {
-      incomingPool.push({ date: serialToDate(serial), amount, used: false });
+      incomingPool.push({ date: serialToDate(serial), amount, merchant: inMerchant, used: false });
     }
   });
 
@@ -357,6 +361,7 @@ export function parseExcel(
         receivedTotal: match.receivedTotal,
         myShare: match.myShare,
         peopleCount: match.N,
+        transfers: match.transfers.map((t) => ({ date: t.date, amount: t.amount, merchant: t.merchant })),
       };
       row.amount = match.myShare;
       row.status = 'dutch_pay';

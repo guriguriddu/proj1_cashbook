@@ -56,10 +56,11 @@ export default function ExcelImportPage() {
   const [savedCount, setSavedCount] = useState(0);
   const [error, setError] = useState('');
 
-  // 카테고리 커스터마이징
+  // 카테고리·금액 커스터마이징
   const [defaultTransferCat, setDefaultTransferCat] = useState('food');
   const [rowCategories, setRowCategories] = useState<Record<number, string>>({});
-  const [catSheetRow, setCatSheetRow] = useState<ParsedRow | null>(null);
+  const [rowAmounts, setRowAmounts] = useState<Record<number, number>>({});
+  const [editRow, setEditRow] = useState<ParsedRow | null>(null);
 
   useEffect(() => {
     getSettings().then((s) => setDefaultTransferCat(s.defaultTransferCategory ?? 'food'));
@@ -93,6 +94,7 @@ export default function ExcelImportPage() {
     setStage('processing');
     setError('');
     setRowCategories({});
+    setRowAmounts({});
     try {
       const existing = await getExpenses();
       const parsed = parseExcel(fileBuffer, [...selectedMonths], existing, defaultTransferCat);
@@ -138,7 +140,7 @@ export default function ExcelImportPage() {
       const expenses: Expense[] = toSave.map((r) => ({
         id: generateId(),
         date: r.date,
-        amount: r.amount,
+        amount: rowAmounts[r.idx] ?? r.amount,
         merchant: r.merchant,
         category: rowCategories[r.idx] ?? r.category,
         memo: r.rawBigCat !== r.rawSmallCat && r.rawSmallCat !== '미분류' ? r.rawSmallCat : '',
@@ -152,7 +154,7 @@ export default function ExcelImportPage() {
       setError('저장 중 오류가 발생했습니다. 다시 시도해주세요.');
       setStage('review');
     }
-  }, [result, selected, rowCategories]);
+  }, [result, selected, rowCategories, rowAmounts]);
 
   const monthLabel = (m: string) => {
     const [y, mm] = m.split('-');
@@ -168,9 +170,21 @@ export default function ExcelImportPage() {
     return `${arr.length}개월`;
   })();
 
-  // 카테고리 변경 적용
-  const applyCategoryChange = useCallback(
-    async (row: ParsedRow, newCat: string, scope: 'this' | 'all') => {
+  // 편집(금액·카테고리) 적용
+  const applyEdit = useCallback(
+    async (row: ParsedRow, newCat: string, newAmount: number, scope: 'this' | 'all') => {
+      // 금액 변경 저장 (원래 값과 같으면 override 제거)
+      setRowAmounts((prev) => {
+        if (newAmount === row.amount) {
+          if (prev[row.idx] === undefined) return prev;
+          const next = { ...prev };
+          delete next[row.idx];
+          return next;
+        }
+        return { ...prev, [row.idx]: newAmount };
+      });
+
+      // 카테고리 변경
       if (scope === 'all' && row.status === 'transfer_nudge') {
         await saveDefaultTransferCategory(newCat);
         setDefaultTransferCat(newCat);
@@ -188,7 +202,7 @@ export default function ExcelImportPage() {
       } else {
         setRowCategories((prev) => ({ ...prev, [row.idx]: newCat }));
       }
-      setCatSheetRow(null);
+      setEditRow(null);
     },
     [result]
   );
@@ -340,7 +354,15 @@ export default function ExcelImportPage() {
   const allRows = [...result.toInclude, ...result.needsReview];
   const selectedRows = allRows.filter((r) => selected.has(r.idx));
   const selectedCount = selectedRows.length;
-  const selectedAmount = selectedRows.reduce((s, r) => s + r.amount, 0);
+  const amountOf = (r: ParsedRow) => rowAmounts[r.idx] ?? r.amount;
+  const selectedAmount = selectedRows.reduce((s, r) => s + amountOf(r), 0);
+  // 월별 합계 (월이 여러 개일 때 분리 표시)
+  const amountByMonth: Record<string, number> = {};
+  selectedRows.forEach((r) => {
+    const m = r.date.slice(0, 7);
+    amountByMonth[m] = (amountByMonth[m] ?? 0) + amountOf(r);
+  });
+  const selectedMonthKeys = Object.keys(amountByMonth).sort().reverse();
 
   const tabRows: Record<ReviewTab, ParsedRow[]> = {
     include: result.toInclude,
@@ -360,14 +382,26 @@ export default function ExcelImportPage() {
 
       {/* 합계 + 탭 — AppHeader(103px) 아래에 sticky 고정 */}
       <div style={{ position: 'sticky', top: 103, zIndex: 9, background: T.bg }}>
-      {/* 선택 합계 — 가져올 항목 + 확인 필요 중 체크된 항목 금액 합 */}
-      <div style={{ padding: '14px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: T.textSec }}>
-          선택한 <span style={{ color: T.accent, fontWeight: 800 }}>{selectedCount}</span>건 합계
-        </span>
-        <span style={{ fontSize: 24, fontWeight: 800, color: T.text, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-          {formatWon(selectedAmount)}
-        </span>
+      {/* 선택 합계 — 총계 + (월 여러 개면) 월별 분리 */}
+      <div style={{ padding: '14px 20px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.textSec }}>
+            선택한 <span style={{ color: T.accent, fontWeight: 800 }}>{selectedCount}</span>건 합계
+          </span>
+          <span style={{ fontSize: 24, fontWeight: 800, color: T.text, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+            {formatWon(selectedAmount)}
+          </span>
+        </div>
+        {selectedMonthKeys.length > 1 && (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.divider}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {selectedMonthKeys.map((m) => (
+              <div key={m} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: T.textSec }}>{monthLabel(m)}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums' }}>{formatWon(amountByMonth[m])}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 탭 */}
@@ -408,6 +442,7 @@ export default function ExcelImportPage() {
 
             {tabRows[activeTab].map((row) => {
               const effectiveCat = rowCategories[row.idx] ?? row.category;
+              const effectiveAmount = amountOf(row);
               const cat = DEFAULT_CATEGORIES.find((c) => c.id === effectiveCat);
               const isReviewable = activeTab !== 'excluded';
               const isChecked = selected.has(row.idx);
@@ -443,9 +478,9 @@ export default function ExcelImportPage() {
                     </button>
                   )}
 
-                  {/* 카테고리 아이콘 — 이체 행은 탭하면 카테고리 변경 */}
+                  {/* 카테고리 아이콘 — 탭하면 편집(금액·카테고리) */}
                   <button
-                    onClick={() => { if (isReviewable) setCatSheetRow(row); }}
+                    onClick={() => { if (isReviewable) setEditRow(row); }}
                     disabled={!isReviewable}
                     style={{ background: 'transparent', border: 0, padding: 0, cursor: isReviewable ? 'pointer' : 'default', flexShrink: 0, position: 'relative' }}
                   >
@@ -464,9 +499,9 @@ export default function ExcelImportPage() {
                     )}
                   </button>
 
-                  {/* 텍스트 */}
+                  {/* 텍스트 — 탭하면 편집(금액·카테고리) */}
                   <button
-                    onClick={() => isReviewable && toggleRow(row.idx)}
+                    onClick={() => isReviewable && setEditRow(row)}
                     disabled={!isReviewable}
                     style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, padding: 0, cursor: isReviewable ? 'pointer' : 'default', textAlign: 'left' }}
                   >
@@ -497,6 +532,7 @@ export default function ExcelImportPage() {
                     {isDutchPay && row.dutchPay && (
                       <div style={{ fontSize: 11, color: '#F97316', fontWeight: 600, marginTop: 3 }}>
                         ↳ n빵 감지 · {row.dutchPay.peopleCount}명 · 원금 {formatWon(row.dutchPay.originalAmount)} → 내 몫 {formatWon(row.dutchPay.myShare)}
+                        <span style={{ textDecoration: 'underline', marginLeft: 4 }}>받은 내역 보기 ›</span>
                       </div>
                     )}
                     {row.nudgeMessage && !isDutchPay && (
@@ -509,10 +545,14 @@ export default function ExcelImportPage() {
                     )}
                   </button>
 
-                  {/* 금액 */}
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  {/* 금액 — 탭하면 편집(금액·카테고리) */}
+                  <button
+                    onClick={() => isReviewable && setEditRow(row)}
+                    disabled={!isReviewable}
+                    style={{ textAlign: 'right', flexShrink: 0, background: 'transparent', border: 0, padding: 0, cursor: isReviewable ? 'pointer' : 'default' }}
+                  >
                     <div style={{ fontSize: 14, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums' }}>
-                      {formatWon(row.amount)}
+                      {formatWon(effectiveAmount)}
                     </div>
                     {isDutchPay && row.dutchPay && (
                       <div style={{ fontSize: 10, color: T.textTer, textDecoration: 'line-through', fontVariantNumeric: 'tabular-nums' }}>
@@ -524,7 +564,7 @@ export default function ExcelImportPage() {
                         {formatWon(row.overseasOriginalAmount)}
                       </div>
                     )}
-                  </div>
+                  </button>
                 </div>
               );
             })}
@@ -545,39 +585,91 @@ export default function ExcelImportPage() {
         </PrimaryButton>
       </div>
 
-      {/* 카테고리 변경 시트 */}
-      {catSheetRow && (
-        <CategoryChangeSheet
-          row={catSheetRow}
-          currentCategory={rowCategories[catSheetRow.idx] ?? catSheetRow.category}
-          onClose={() => setCatSheetRow(null)}
-          onApply={applyCategoryChange}
+      {/* 편집(금액·카테고리) 시트 */}
+      {editRow && (
+        <EditSheet
+          row={editRow}
+          currentCategory={rowCategories[editRow.idx] ?? editRow.category}
+          currentAmount={rowAmounts[editRow.idx] ?? editRow.amount}
+          onClose={() => setEditRow(null)}
+          onApply={applyEdit}
         />
       )}
     </Screen>
   );
 }
 
-function CategoryChangeSheet({
+function EditSheet({
   row,
   currentCategory,
+  currentAmount,
   onClose,
   onApply,
 }: {
   row: ParsedRow;
   currentCategory: string;
+  currentAmount: number;
   onClose: () => void;
-  onApply: (row: ParsedRow, cat: string, scope: 'this' | 'all') => void;
+  onApply: (row: ParsedRow, cat: string, amount: number, scope: 'this' | 'all') => void;
 }) {
   const [selectedCat, setSelectedCat] = useState(currentCategory);
+  const [amount, setAmount] = useState(currentAmount);
   const [scope, setScope] = useState<'this' | 'all'>('this');
   const isTransfer = row.status === 'transfer_nudge';
   const cats = DEFAULT_CATEGORIES.filter((c) => c.id !== 'other');
 
   return (
-    <BottomSheet open onClose={onClose} title="카테고리 변경" height="80%">
+    <BottomSheet open onClose={onClose} title="금액·카테고리 수정" height="85%">
       <div style={{ padding: '0 20px 24px' }}>
+        {/* 금액 입력 */}
+        <div style={{ padding: '4px 0 20px', textAlign: 'center', borderBottom: `1px solid ${T.divider}`, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: T.textSec, fontWeight: 500, marginBottom: 6 }}>금액</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 4 }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: T.textSec }}>₩</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={Number(amount || 0).toLocaleString('ko-KR')}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/[^\d]/g, '');
+                setAmount(Math.max(0, Math.floor(Number(digits) || 0)));
+              }}
+              style={{
+                border: 0, background: 'transparent', textAlign: 'center',
+                fontFamily: 'Pretendard, system-ui, sans-serif', fontSize: 28, fontWeight: 800,
+                color: T.text, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em',
+                width: 160, outline: 'none', padding: 0,
+              }}
+            />
+            <span style={{ fontSize: 16, fontWeight: 700, color: T.textSec }}>원</span>
+          </div>
+        </div>
+
+        {/* n빵 받은 내역 */}
+        {row.dutchPay && row.dutchPay.transfers && row.dutchPay.transfers.length > 0 && (
+          <div style={{ marginBottom: 16, padding: '12px 14px', background: '#FFF7ED', borderRadius: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#C2410C', marginBottom: 8 }}>
+              n빵 {row.dutchPay.peopleCount}명이서 나눔 · 원금 {formatWon(row.dutchPay.originalAmount)}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {row.dutchPay.transfers.map((t, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: T.textSec, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
+                    {t.merchant || '입금'} · {t.date}
+                  </span>
+                  <span style={{ color: '#16A34A', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>+{formatWon(t.amount)}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #FED7AA', display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: '#C2410C' }}>
+              <span>받은 합계 {formatWon(row.dutchPay.receivedTotal)} → 내 몫</span>
+              <span>{formatWon(row.dutchPay.myShare)}</span>
+            </div>
+          </div>
+        )}
+
         {/* 카테고리 그리드 */}
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, marginBottom: 10 }}>카테고리</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
           {cats.map((cat) => (
             <button
@@ -635,7 +727,7 @@ function CategoryChangeSheet({
           </div>
         )}
 
-        <PrimaryButton onClick={() => onApply(row, selectedCat, scope)}>적용</PrimaryButton>
+        <PrimaryButton onClick={() => onApply(row, selectedCat, amount, scope)}>적용</PrimaryButton>
       </div>
     </BottomSheet>
   );

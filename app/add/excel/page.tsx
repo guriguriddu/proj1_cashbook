@@ -358,6 +358,8 @@ export default function ExcelImportPage() {
     <Screen>
       <AppHeader title={`${selectedMonthsTitle} 분석 결과`} onBack={() => setStage('upload')} />
 
+      {/* 합계 + 탭 — AppHeader(103px) 아래에 sticky 고정 */}
+      <div style={{ position: 'sticky', top: 103, zIndex: 9, background: T.bg }}>
       {/* 선택 합계 — 가져올 항목 + 확인 필요 중 체크된 항목 금액 합 */}
       <div style={{ padding: '14px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: T.textSec }}>
@@ -390,6 +392,7 @@ export default function ExcelImportPage() {
             </span>
           </button>
         ))}
+      </div>
       </div>
 
       <ScreenBody padBottom={160}>

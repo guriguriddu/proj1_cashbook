@@ -280,7 +280,9 @@ export default function ImportPage() {
   const needsReviewFiltered = filterByMonth(result.needsReview);
   const excludedFiltered = filterByMonth(result.excluded);
 
-  const selectedCount = allRows.filter((r) => selected.has(r.idx)).length;
+  const selectedRows = allRows.filter((r) => selected.has(r.idx));
+  const selectedCount = selectedRows.length;
+  const selectedAmount = selectedRows.reduce((s, r) => s + r.amount, 0);
 
   const tabRows: Record<ReviewTab, ParsedRow[]> = {
     include: toIncludeFiltered,
@@ -297,6 +299,18 @@ export default function ImportPage() {
   return (
     <Screen>
       <AppHeader title="분석 결과 확인" onBack={() => setStage('upload')} />
+
+      {/* 합계 + 월필터 + 탭 — AppHeader(103px) 아래에 sticky 고정 */}
+      <div style={{ position: 'sticky', top: 103, zIndex: 9, background: T.bg }}>
+      {/* 선택 합계 */}
+      <div style={{ padding: '14px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: T.textSec }}>
+          선택한 <span style={{ color: T.accent, fontWeight: 800 }}>{selectedCount}</span>건 합계
+        </span>
+        <span style={{ fontSize: 24, fontWeight: 800, color: T.text, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+          {formatWon(selectedAmount)}
+        </span>
+      </div>
 
       {/* 월 필터 */}
       {result.months.length > 1 && (
@@ -351,6 +365,7 @@ export default function ImportPage() {
             </span>
           </button>
         ))}
+      </div>
       </div>
 
       <ScreenBody padBottom={160}>

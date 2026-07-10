@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/client';
 import { Expense, Budget, BudgetScope, Category, AppSettings } from '@/types';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
+import type { PayOverride } from '@/lib/invest-tax';
 
 // Supabase 클라이언트 (타입 추론 문제 해결을 위해 any 사용)
 // 실제 Supabase 프로젝트 설정 후 타입이 제대로 작동합니다
@@ -722,6 +723,47 @@ export async function saveDefaultTransferCategory(categoryId: string): Promise<v
 
   const current: Record<string, string> = (data?.merchant_categories as Record<string, string>) || {};
   current['__transfer_default'] = categoryId;
+
+  await supabase.from('user_settings').upsert({
+    user_id: user.id,
+    merchant_categories: current,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+// 연말정산: 분류 불가 결제수단 → 신용/체크/제외 직접 지정 저장
+export async function getPayBucketOverrides(): Promise<Record<string, PayOverride>> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return {};
+
+  const { data } = await supabase
+    .from('user_settings')
+    .select('merchant_categories')
+    .eq('user_id', user.id)
+    .single();
+
+  const merchantCats = (data?.merchant_categories as Record<string, string>) || {};
+  try {
+    return JSON.parse(merchantCats['__pay_bucket_overrides'] || '{}');
+  } catch {
+    return {};
+  }
+}
+
+export async function savePayBucketOverrides(overrides: Record<string, PayOverride>): Promise<void> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data } = await supabase
+    .from('user_settings')
+    .select('merchant_categories')
+    .eq('user_id', user.id)
+    .single();
+
+  const current: Record<string, string> = (data?.merchant_categories as Record<string, string>) || {};
+  current['__pay_bucket_overrides'] = JSON.stringify(overrides);
 
   await supabase.from('user_settings').upsert({
     user_id: user.id,

@@ -218,19 +218,52 @@ export interface SpendByPay {
 }
 
 // 특정 연도의 결제수단별 소비 합계
+// 분류 불가(간편결제·계좌이체) 결제수단에 사용자가 직접 지정한 버킷
+// 'exclude' = 공제 대상 아님으로 확정 (현금영수증 미발급 계좌이체 등)
+export type PayOverride = 'credit' | 'check' | 'exclude';
+
+type SpendItem = { amount: number; payMethod?: string; category: string; date: string; merchant?: string };
+
 export function summarizeSpendByPay(
-  items: { amount: number; payMethod?: string; category: string; date: string; merchant?: string }[],
-  year: number
+  items: SpendItem[],
+  year: number,
+  overrides?: Record<string, PayOverride>
 ): SpendByPay {
   const sum: SpendByPay = { credit: 0, check: 0, transit: 0, other: 0, total: 0 };
   const yp = String(year);
   for (const e of items) {
     if (!e.date.startsWith(yp)) continue;
-    const bucket = classifyPayMethod(e.payMethod, e.category, e.merchant);
+    let bucket = classifyPayMethod(e.payMethod, e.category, e.merchant);
+    if (bucket === 'other') {
+      const ov = overrides?.[(e.payMethod || '').trim()];
+      if (ov === 'credit' || ov === 'check') bucket = ov;
+    }
     sum[bucket] += e.amount;
     sum.total += e.amount;
   }
   return sum;
+}
+
+// 분류 불가 항목을 결제수단별로 묶어 반환 (직접 지정 UI용, 금액 큰 순)
+export interface OtherPayGroup {
+  payMethod: string;
+  amount: number;
+  count: number;
+}
+
+export function groupOtherPayMethods(items: SpendItem[], year: number): OtherPayGroup[] {
+  const map = new Map<string, OtherPayGroup>();
+  const yp = String(year);
+  for (const e of items) {
+    if (!e.date.startsWith(yp)) continue;
+    if (classifyPayMethod(e.payMethod, e.category, e.merchant) !== 'other') continue;
+    const key = (e.payMethod || '').trim();
+    const g = map.get(key) ?? { payMethod: key, amount: 0, count: 0 };
+    g.amount += e.amount;
+    g.count += 1;
+    map.set(key, g);
+  }
+  return [...map.values()].sort((a, b) => b.amount - a.amount);
 }
 
 export function calcYearendDeduction(inputs: YearendInputs) {

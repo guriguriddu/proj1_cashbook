@@ -1,17 +1,22 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Screen, ScreenBody, T, BottomSheet, PrimaryButton } from '@/components/ui';
-import { getInvestSettings, saveInvestSettings, getExpenses } from '@/lib/supabase-storage';
+import {
+  getInvestSettings, saveInvestSettings, getExpenses,
+  getPayBucketOverrides, savePayBucketOverrides,
+} from '@/lib/supabase-storage';
 import {
   calcIncomeTax, calcDividendTax, calcCapitalGainTax,
   formatWon, fmtPct,
   calcYearendDeduction,
   summarizeSpendByPay,
+  groupOtherPayMethods,
   type YearendInputs,
-  type SpendByPay,
+  type PayOverride,
 } from '@/lib/invest-tax';
+import type { Expense } from '@/types';
 import { SectionCard, InputRow, ToggleRow, ResultRow, InfoBanner, NumberEditSheet } from '@/components/invest-ui';
 
 // ─── 타입 ────────────────────────────────────────────────────────────────────
@@ -49,26 +54,48 @@ export default function InvestPage() {
     usDividend: 0,
   });
 
-  // 연말정산 계산기
-  const [yearendInputs, setYearendInputs] = useState<YearendInputs>({
-    totalSalary: 0,
-    creditCard: 0,
-    checkCard: 0,
-    traditional: 0,
-    transit: 0,
-  });
+  // 연말정산 계산기 — 사용자가 직접 수정한 값만 저장 (없으면 가계부 집계값 사용)
+  const [yearendManual, setYearendManual] = useState<Partial<YearendInputs>>({});
 
   // 올해 가계부에서 결제수단별 소비 자동 집계 → 계산기 자동 채움 (이후 사용자가 수정 가능)
   const currentYear = new Date().getFullYear();
-  const [spendByPay, setSpendByPay] = useState<SpendByPay | null>(null);
+  const [yearItems, setYearItems] = useState<Expense[] | null>(null);
+  // 분류 불가(간편결제·계좌이체) 결제수단의 직접 지정: 신용/체크/제외
+  const [payOverrides, setPayOverrides] = useState<Record<string, PayOverride>>({});
 
   useEffect(() => {
-    getExpenses().then((items) => {
-      const s = summarizeSpendByPay(items, currentYear);
-      setSpendByPay(s);
-      setYearendInputs((p) => ({ ...p, creditCard: s.credit, checkCard: s.check, transit: s.transit }));
+    Promise.all([getExpenses(), getPayBucketOverrides()]).then(([items, ov]) => {
+      setYearItems(items);
+      setPayOverrides(ov);
     });
-  }, [currentYear]);
+  }, []);
+
+  const spendByPay = useMemo(
+    () => (yearItems ? summarizeSpendByPay(yearItems, currentYear, payOverrides) : null),
+    [yearItems, payOverrides, currentYear]
+  );
+  const otherPayGroups = useMemo(
+    () => (yearItems ? groupOtherPayMethods(yearItems, currentYear) : []),
+    [yearItems, currentYear]
+  );
+
+  // 계산기 입력 = 직접 수정값 우선, 없으면 가계부 집계값
+  const yearendInputs: YearendInputs = {
+    totalSalary: yearendManual.totalSalary ?? 0,
+    creditCard: yearendManual.creditCard ?? spendByPay?.credit ?? 0,
+    checkCard: yearendManual.checkCard ?? spendByPay?.check ?? 0,
+    traditional: yearendManual.traditional ?? 0,
+    transit: yearendManual.transit ?? spendByPay?.transit ?? 0,
+  };
+  const setPayOverride = (payMethod: string, ov: PayOverride | null) => {
+    setPayOverrides((prev) => {
+      const next = { ...prev };
+      if (ov === null) delete next[payMethod];
+      else next[payMethod] = ov;
+      savePayBucketOverrides(next);
+      return next;
+    });
+  };
 
   // 배당 계산기 입력값
   const [divInputs, setDivInputs] = useState({
@@ -227,27 +254,27 @@ export default function InvestPage() {
     },
     yearendSalary: {
       label: '연간 총급여 (세전)', value: yearendInputs.totalSalary || laborIncome, unit: '원', step: 1_000_000,
-      set: (v) => setYearendInputs(p => ({ ...p, totalSalary: v })),
+      set: (v) => setYearendManual(p => ({ ...p, totalSalary: v })),
       presets: [{ value: 30_000_000, label: '3,000만' }, { value: 50_000_000, label: '5,000만' }, { value: 70_000_000, label: '7,000만' }, { value: 100_000_000, label: '1억' }],
     },
     yearendCredit: {
       label: '연간 신용카드 사용액', value: yearendInputs.creditCard, unit: '원', step: 500_000,
-      set: (v) => setYearendInputs(p => ({ ...p, creditCard: v })),
+      set: (v) => setYearendManual(p => ({ ...p, creditCard: v })),
       presets: [{ value: 0, label: '없음' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }, { value: 20_000_000, label: '2,000만' }],
     },
     yearendCheck: {
       label: '연간 체크카드+현금영수증', value: yearendInputs.checkCard, unit: '원', step: 500_000,
-      set: (v) => setYearendInputs(p => ({ ...p, checkCard: v })),
+      set: (v) => setYearendManual(p => ({ ...p, checkCard: v })),
       presets: [{ value: 0, label: '없음' }, { value: 3_000_000, label: '300만' }, { value: 5_000_000, label: '500만' }, { value: 10_000_000, label: '1,000만' }],
     },
     yearendTraditional: {
       label: '전통시장 사용액', value: yearendInputs.traditional, unit: '원', step: 100_000,
-      set: (v) => setYearendInputs(p => ({ ...p, traditional: v })),
+      set: (v) => setYearendManual(p => ({ ...p, traditional: v })),
       presets: [{ value: 0, label: '없음' }, { value: 500_000, label: '50만' }, { value: 1_000_000, label: '100만' }, { value: 2_500_000, label: '250만' }],
     },
     yearendTransit: {
       label: '대중교통 사용액', value: yearendInputs.transit, unit: '원', step: 100_000,
-      set: (v) => setYearendInputs(p => ({ ...p, transit: v })),
+      set: (v) => setYearendManual(p => ({ ...p, transit: v })),
       presets: [{ value: 0, label: '없음' }, { value: 500_000, label: '50만' }, { value: 1_000_000, label: '100만' }, { value: 2_000_000, label: '200만' }],
     },
   };
@@ -697,14 +724,57 @@ export default function InvestPage() {
                     <span style={{ fontSize: 15, fontWeight: 700, color: r.color, fontVariantNumeric: 'tabular-nums' }}>{formatWon(r.val)}</span>
                   </div>
                 ))}
-                {spendByPay.other > 0 && (
+                {otherPayGroups.length > 0 && (
                   <div style={{ padding: '13px 16px', borderBottom: `1px solid ${T.divider}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: 14, fontWeight: 600, color: T.textTer }}>분류 불가 (간편결제·계좌이체)</span>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: T.textTer, fontVariantNumeric: 'tabular-nums' }}>{formatWon(spendByPay.other)}</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: T.textTer, fontVariantNumeric: 'tabular-nums' }}>
+                        {formatWon(otherPayGroups.filter((g) => !payOverrides[g.payMethod]).reduce((s, g) => s + g.amount, 0))}
+                      </span>
                     </div>
                     <div style={{ fontSize: 11, color: T.textTer, marginTop: 4, lineHeight: 1.5 }}>
-                      간편결제·계좌이체는 실제 결제 카드를 알 수 없어 제외됐어요. 연결된 카드 기준으로 아래 계산기에서 직접 더해주세요.
+                      실제로 결제된 수단을 선택하면 위 사용액에 합산돼요. 현금영수증을 안 받은 계좌이체는 &lsquo;제외&rsquo;를 선택하세요.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                      {otherPayGroups.map((g) => {
+                        const current = payOverrides[g.payMethod];
+                        return (
+                          <div key={g.payMethod || '_none'} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {g.payMethod || '결제수단 미표기'}
+                              </div>
+                              <div style={{ fontSize: 11, color: T.textTer, fontVariantNumeric: 'tabular-nums' }}>
+                                {g.count}건 · {formatWon(g.amount)}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                              {([
+                                { value: 'credit' as const, label: '신용', color: T.textSec },
+                                { value: 'check' as const, label: '체크', color: T.accent },
+                                { value: 'exclude' as const, label: '제외', color: T.textTer },
+                              ]).map((opt) => {
+                                const on = current === opt.value;
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    onClick={() => setPayOverride(g.payMethod, on ? null : opt.value)}
+                                    style={{
+                                      padding: '6px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+                                      border: on ? `1.5px solid ${opt.color}` : `1px solid ${T.divider}`,
+                                      background: on ? opt.color + '15' : 'transparent',
+                                      color: on ? opt.color : T.textTer,
+                                      cursor: 'pointer', fontFamily: 'Pretendard, system-ui, sans-serif',
+                                    }}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

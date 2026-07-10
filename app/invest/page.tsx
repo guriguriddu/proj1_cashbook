@@ -669,7 +669,7 @@ export default function InvestPage() {
                 {[
                   { step: '1', text: '총급여 25%까지는', sub: '어떤 결제수단이든 공제 없음 → 신용카드로 포인트/혜택 챙기기', color: '#60A5FA' },
                   { step: '2', text: '25% 초과분부터', sub: '체크카드·현금영수증 30% 공제 > 신용카드 15% — 체크카드가 2배 유리', color: '#34D399' },
-                  { step: '3', text: '전통시장·대중교통', sub: '별도 40% 공제 (한도 각 100만) — 무조건 영수증 챙기기', color: '#FBBF24' },
+                  { step: '3', text: '전통시장·대중교통', sub: '40% 공제 (합산 추가한도 300만·7천 초과 200만) — 버스·지하철·기차만, 택시는 제외', color: '#FBBF24' },
                 ].map(s => (
                   <div key={s.step} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                     <div style={{ width: 22, height: 22, borderRadius: 11, background: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
@@ -746,8 +746,8 @@ export default function InvestPage() {
               {[
                 { label: '신용카드', rate: '15%', note: '공제율 낮음 → 25%까지 써서 혜택만', color: T.textSec },
                 { label: '체크카드 · 현금영수증', rate: '30%', note: '핵심 구간', color: T.accent },
-                { label: '전통시장', rate: '40%', note: '별도 한도 100만', color: '#059669' },
-                { label: '대중교통', rate: '40%', note: '별도 한도 100만', color: '#059669' },
+                { label: '전통시장', rate: '40%', note: '대중교통과 합산 추가한도 300만 (7천 초과 200만)', color: '#059669' },
+                { label: '대중교통', rate: '40%', note: '버스·지하철·기차만 (택시·주유 제외)', color: '#059669' },
               ].map((r, i, arr) => (
                 <div key={r.label} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -778,11 +778,16 @@ export default function InvestPage() {
                 <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
                 {yearendInputs.creditCard > 0 && <ResultRow label="신용카드 공제 (15%)" value={formatWon(yearendResult.creditDeduction)} color={T.accent} />}
                 {yearendInputs.checkCard > 0 && <ResultRow label="체크카드·현금 공제 (30%)" value={formatWon(yearendResult.checkDeduction)} color={T.accent} />}
-                {yearendInputs.traditional > 0 && <ResultRow label="전통시장 공제 (40%)" value={formatWon(yearendResult.extraTraditional)} color={T.accent} />}
-                {yearendInputs.transit > 0 && <ResultRow label="대중교통 공제 (40%)" value={formatWon(yearendResult.extraTransit)} color={T.accent} />}
+                {yearendInputs.traditional > 0 && <ResultRow label="전통시장 공제 (40%)" value={formatWon(yearendResult.traditionalDeduction)} color={T.accent} />}
+                {yearendInputs.transit > 0 && <ResultRow label="대중교통 공제 (40%)" value={formatWon(yearendResult.transitDeduction)} color={T.accent} />}
                 {yearendResult.baseDeduction >= yearendResult.baseLimit && (
                   <div style={{ padding: '6px 16px' }}>
                     <span style={{ fontSize: 11, color: T.warn, fontWeight: 600 }}>기본 공제한도 {formatWon(yearendResult.baseLimit)} 도달</span>
+                  </div>
+                )}
+                {yearendResult.extraDeduction >= yearendResult.extraLimit && (
+                  <div style={{ padding: '6px 16px' }}>
+                    <span style={{ fontSize: 11, color: T.warn, fontWeight: 600 }}>추가 공제한도(전통시장·대중교통) {formatWon(yearendResult.extraLimit)} 도달</span>
                   </div>
                 )}
                 <div style={{ height: 1, background: T.divider, margin: '4px 0' }} />
@@ -791,7 +796,7 @@ export default function InvestPage() {
             )}
 
             <InfoBanner tone="neutral">
-              공제 한도: 총급여 7천만↓ 300만 · 7천만~1.2억 250만 · 1.2억↑ 200만원 (기본) + 전통시장·대중교통 각 100만 별도.<br />
+              공제 한도: 기본(신용+체크·현금) 총급여 7천만↓ 300만 · 7천만↑ 250만 + 추가(전통시장·대중교통 합산) 7천만↓ 300만 · 7천만↑ 200만.<br />
               실제 절세액은 본인 소득세율에 따라 다르며, 근로소득공제·인적공제 등 다른 공제가 먼저 적용돼요.
             </InfoBanner>
           </div>

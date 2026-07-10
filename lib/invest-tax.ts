@@ -188,17 +188,21 @@ export interface YearendInputs {
 }
 
 // ─── 결제수단 → 소득공제 버킷 분류 ───────────────────────────────────────────
-// credit: 신용카드(15%) / check: 체크카드·현금영수증(30%) / transit: 대중교통(40% 별도)
+// credit: 신용카드(15%) / check: 체크카드·현금영수증(30%) / transit: 대중교통(40% 추가한도)
 // other: 간편결제·계좌이체 등 실제 결제수단 미상(공제 분류 불가)
 export type PayBucket = 'credit' | 'check' | 'transit' | 'other';
 
-export function classifyPayMethod(payMethod?: string, category?: string): PayBucket {
-  // 대중교통은 카테고리로 판별 (별도 한도 40%)
-  if (category === 'transport') return 'transit';
+// 세법상 대중교통: 버스·지하철·기차(KTX/SRT 포함)·교통카드만. 택시·주유·주차·킥보드는 제외.
+const PUBLIC_TRANSIT = /지하철|전철|버스|코레일|철도|KTX|SRT|기차|열차|티머니|캐시비|교통카드|후불교통/i;
+
+export function classifyPayMethod(payMethod?: string, category?: string, merchant?: string): PayBucket {
+  // 대중교통은 교통비 카테고리 중에서도 실제 대중교통 가맹점만 (택시·주유는 카드 공제율로)
+  if (category === 'transport' && merchant && PUBLIC_TRANSIT.test(merchant)) return 'transit';
   const s = (payMethod || '').toLowerCase();
   if (!s) return 'other';
   // 체크카드·현금영수증 (신용보다 먼저 검사 — "체크카드"에 '카드'가 들어가므로)
-  if (/체크|check|현금영수증|현금/.test(s)) return 'check';
+  // 토스뱅크카드는 '체크' 글자가 없지만 체크카드
+  if (/체크|check|현금영수증|현금|토스뱅크카드/.test(s)) return 'check';
   // 신용카드
   if (/카드|card|신용/.test(s)) return 'credit';
   // 간편결제(머니/페이)·계좌이체·통장 등 → 실제 수단 미상
@@ -215,14 +219,14 @@ export interface SpendByPay {
 
 // 특정 연도의 결제수단별 소비 합계
 export function summarizeSpendByPay(
-  items: { amount: number; payMethod?: string; category: string; date: string }[],
+  items: { amount: number; payMethod?: string; category: string; date: string; merchant?: string }[],
   year: number
 ): SpendByPay {
   const sum: SpendByPay = { credit: 0, check: 0, transit: 0, other: 0, total: 0 };
   const yp = String(year);
   for (const e of items) {
     if (!e.date.startsWith(yp)) continue;
-    const bucket = classifyPayMethod(e.payMethod, e.category);
+    const bucket = classifyPayMethod(e.payMethod, e.category, e.merchant);
     sum[bucket] += e.amount;
     sum.total += e.amount;
   }
@@ -233,26 +237,37 @@ export function calcYearendDeduction(inputs: YearendInputs) {
   const { totalSalary, creditCard, checkCard, traditional, transit } = inputs;
   const threshold = Math.floor(totalSalary * 0.25);
 
-  // 신용카드로 threshold 먼저 소진
-  const creditAfterThreshold = Math.max(0, creditCard - threshold);
-  const remainingThreshold = Math.max(0, threshold - creditCard);
-  const checkAfterThreshold = Math.max(0, checkCard - remainingThreshold);
+  // 최저사용금액(총급여 25%)은 세법상 신용 → 체크·현금 → 전통시장 → 대중교통 순으로 소진.
+  // 총사용액이 문턱에 못 미치면 전통시장·대중교통 포함 공제 0원.
+  let remainingThreshold = threshold;
+  const afterThreshold = (amount: number) => {
+    const consumed = Math.min(amount, remainingThreshold);
+    remainingThreshold -= consumed;
+    return amount - consumed;
+  };
+  const creditEligible = afterThreshold(creditCard);
+  const checkEligible = afterThreshold(checkCard);
+  const traditionalEligible = afterThreshold(traditional);
+  const transitEligible = afterThreshold(transit);
 
-  const creditDeduction = Math.floor(creditAfterThreshold * 0.15);
-  const checkDeduction = Math.floor(checkAfterThreshold * 0.30);
-  const traditionalDeduction = Math.floor(traditional * 0.40);
-  const transitDeduction = Math.floor(transit * 0.40);
+  const creditDeduction = Math.floor(creditEligible * 0.15);
+  const checkDeduction = Math.floor(checkEligible * 0.30);
+  const traditionalDeduction = Math.floor(traditionalEligible * 0.40);
+  const transitDeduction = Math.floor(transitEligible * 0.40);
 
-  const baseLimit = totalSalary <= 70_000_000 ? 3_000_000 : totalSalary <= 120_000_000 ? 2_500_000 : 2_000_000;
+  // 한도(2023 개정): 기본한도 300만(총급여 7천 초과 250만)
+  // + 추가한도(전통시장·대중교통 합산) 300만(총급여 7천 초과 200만)
+  const under70m = totalSalary <= 70_000_000;
+  const baseLimit = under70m ? 3_000_000 : 2_500_000;
+  const extraLimit = under70m ? 3_000_000 : 2_000_000;
   const baseDeduction = Math.min(creditDeduction + checkDeduction, baseLimit);
-  const extraTraditional = Math.min(traditionalDeduction, 1_000_000);
-  const extraTransit = Math.min(transitDeduction, 1_000_000);
-  const totalDeduction = baseDeduction + extraTraditional + extraTransit;
+  const extraDeduction = Math.min(traditionalDeduction + transitDeduction, extraLimit);
+  const totalDeduction = baseDeduction + extraDeduction;
 
   return {
     threshold, creditDeduction, checkDeduction,
     traditionalDeduction, transitDeduction,
-    baseLimit, baseDeduction, extraTraditional, extraTransit,
+    baseLimit, extraLimit, baseDeduction, extraDeduction,
     totalDeduction, remainingThreshold,
   };
 }

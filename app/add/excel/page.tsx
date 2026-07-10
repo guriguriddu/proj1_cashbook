@@ -140,7 +140,10 @@ export default function ExcelImportPage() {
       const expenses: Expense[] = toSave.map((r) => ({
         id: generateId(),
         date: r.date,
-        amount: rowAmounts[r.idx] ?? r.amount,
+        // 부분환불은 돌려받은 돈 → 음수로 저장해 지출 합계에서 차감
+        amount: r.status === 'refund_partial'
+          ? -Math.abs(rowAmounts[r.idx] ?? r.amount)
+          : rowAmounts[r.idx] ?? r.amount,
         merchant: r.merchant,
         category: rowCategories[r.idx] ?? r.category,
         memo: r.rawBigCat !== r.rawSmallCat && r.rawSmallCat !== '미분류' ? r.rawSmallCat : '',
@@ -356,12 +359,14 @@ export default function ExcelImportPage() {
   const selectedRows = allRows.filter((r) => selected.has(r.idx));
   const selectedCount = selectedRows.length;
   const amountOf = (r: ParsedRow) => rowAmounts[r.idx] ?? r.amount;
-  const selectedAmount = selectedRows.reduce((s, r) => s + amountOf(r), 0);
+  // 부분환불은 지출 차감(음수 저장)이므로 합계에서도 빼서 집계
+  const signedAmountOf = (r: ParsedRow) => (r.status === 'refund_partial' ? -amountOf(r) : amountOf(r));
+  const selectedAmount = selectedRows.reduce((s, r) => s + signedAmountOf(r), 0);
   // 월별 합계 (월이 여러 개일 때 분리 표시)
   const amountByMonth: Record<string, number> = {};
   selectedRows.forEach((r) => {
     const m = r.date.slice(0, 7);
-    amountByMonth[m] = (amountByMonth[m] ?? 0) + amountOf(r);
+    amountByMonth[m] = (amountByMonth[m] ?? 0) + signedAmountOf(r);
   });
   const selectedMonthKeys = Object.keys(amountByMonth).sort().reverse();
 

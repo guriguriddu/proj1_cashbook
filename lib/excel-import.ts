@@ -246,7 +246,7 @@ export function parseExcel(
         if (amount <= 5000 || merchant.includes('취소 적립') || merchant.includes('포인트 취소')) {
           parsed.push({ ...base, amount, category: 'other', status: 'excluded', excludeReason: '소액 포인트/적립 취소', selected: false });
         } else {
-          parsed.push({ ...base, amount, category: 'other', status: 'refund_partial', nudgeMessage: '환불/취소 항목입니다', selected: false });
+          parsed.push({ ...base, amount, category: 'other', status: 'refund_partial', nudgeMessage: '환불/취소 항목입니다. 선택하면 지출에서 차감(−)으로 저장돼요.', selected: false });
         }
         return;
       }

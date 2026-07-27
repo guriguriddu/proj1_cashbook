@@ -35,6 +35,27 @@ function formatWon(n: number) {
   return '₩' + Math.floor(n).toLocaleString('ko-KR');
 }
 
+// 제외됨 탭에서 다시 포함시킬 수 있는지 — 다른 행과 금액이 맞물려 있어
+// 혼자 되살리면 이중계산이 나는 것들(환불 상계 쌍·충전↔실결제 연결·해외 실청구 통합)과
+// 수입 항목은 잠금. 나머지(외화 거래·이체 제외 등)는 사용자가 직접 되살릴 수 있게 한다.
+function canReincludeExcluded(row: ParsedRow): boolean {
+  if (row.rawType === '수입') return false;
+  if (row.refundPartnerIdx !== undefined) return false;
+  if (row.chargeLinkedIdx !== undefined) return false;
+  if (row.excludeReason === '해외결제 실청구액으로 통합') return false;
+  return true;
+}
+
+// 돈이 들어온 방향(환불·포인트 취소·입금 이체)을 다시 포함시키면 지출이 아니라
+// 차감(−)으로 저장해야 총합이 안 틀어진다.
+function isCreditRow(row: ParsedRow): boolean {
+  return (
+    row.status === 'refund_partial' ||
+    row.excludeReason === '소액 포인트/적립 취소' ||
+    row.excludeReason === '입금 이체'
+  );
+}
+
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   include: { label: '포함', color: T.accent },
   dutch_pay: { label: 'n빵', color: '#F97316' },
@@ -159,13 +180,13 @@ export default function ExcelImportPage() {
     if (!result) return;
     setStage('saving');
     try {
-      const allRows = [...result.toInclude, ...result.needsReview];
+      const allRows = [...result.toInclude, ...result.needsReview, ...result.excluded];
       const toSave = allRows.filter((r) => selected.has(r.idx));
       const expenses: Expense[] = toSave.map((r) => ({
         id: generateId(),
         date: r.date,
-        // 부분환불은 돌려받은 돈 → 음수로 저장해 지출 합계에서 차감
-        amount: r.status === 'refund_partial'
+        // 돈이 들어온 방향(부분환불·되살린 포인트취소/입금이체)은 음수로 저장해 지출에서 차감
+        amount: isCreditRow(r)
           ? -Math.abs(rowAmounts[r.idx] ?? r.amount)
           : rowAmounts[r.idx] ?? r.amount,
         merchant: r.merchant,
@@ -234,7 +255,7 @@ export default function ExcelImportPage() {
         setRowCategories((prev) => {
           const next = { ...prev, [row.idx]: newCat };
           if (result && merchantKey) {
-            const allRows = [...result.toInclude, ...result.needsReview];
+            const allRows = [...result.toInclude, ...result.needsReview, ...result.excluded];
             allRows.forEach((r) => {
               if (r.idx !== row.idx && normMerchant(r.merchant) === merchantKey) {
                 next[r.idx] = newCat;
@@ -393,12 +414,12 @@ export default function ExcelImportPage() {
   // ── Review / Saving ──────────────────────────────────────────
   if (!result) return null;
 
-  const allRows = [...result.toInclude, ...result.needsReview];
+  const allRows = [...result.toInclude, ...result.needsReview, ...result.excluded];
   const selectedRows = allRows.filter((r) => selected.has(r.idx));
   const selectedCount = selectedRows.length;
   const amountOf = (r: ParsedRow) => rowAmounts[r.idx] ?? r.amount;
-  // 부분환불은 지출 차감(음수 저장)이므로 합계에서도 빼서 집계
-  const signedAmountOf = (r: ParsedRow) => (r.status === 'refund_partial' ? -amountOf(r) : amountOf(r));
+  // 돈이 들어온 방향(부분환불·되살린 포인트취소/입금이체)은 지출 차감이므로 합계에서도 빼서 집계
+  const signedAmountOf = (r: ParsedRow) => (isCreditRow(r) ? -amountOf(r) : amountOf(r));
   const selectedAmount = selectedRows.reduce((s, r) => s + signedAmountOf(r), 0);
   // 월별 합계 (월이 여러 개일 때 분리 표시)
   const amountByMonth: Record<string, number> = {};
@@ -420,15 +441,17 @@ export default function ExcelImportPage() {
     { id: 'excluded', label: '제외됨', count: result.excluded.length },
   ];
 
-  // 현재 탭 전체 선택/해제
+  // 현재 탭 전체 선택/해제 — 제외됨 탭은 되살릴 수 있는 행만 대상
   const currentTabRows = tabRows[activeTab];
+  const currentTabSelectableRows =
+    activeTab === 'excluded' ? currentTabRows.filter(canReincludeExcluded) : currentTabRows;
   const allInTabSelected =
-    activeTab !== 'excluded' && currentTabRows.length > 0 && currentTabRows.every((r) => selected.has(r.idx));
+    currentTabSelectableRows.length > 0 && currentTabSelectableRows.every((r) => selected.has(r.idx));
   const toggleAllInTab = () => {
     const turnOn = !allInTabSelected;
     setSelected((prev) => {
       const next = new Set(prev);
-      currentTabRows.forEach((r) => { if (turnOn) next.add(r.idx); else next.delete(r.idx); });
+      currentTabSelectableRows.forEach((r) => { if (turnOn) next.add(r.idx); else next.delete(r.idx); });
       return next;
     });
   };
@@ -491,10 +514,10 @@ export default function ExcelImportPage() {
           <div style={{ padding: '48px 20px', textAlign: 'center', color: T.textTer, fontSize: 14 }}>항목이 없어요</div>
         ) : (
           <div style={{ padding: '8px 0' }}>
-            {activeTab !== 'excluded' && currentTabRows.length > 0 && (
+            {currentTabSelectableRows.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 16px 8px' }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: T.textSec }}>
-                  이 탭 {currentTabRows.length}건 중 <span style={{ color: T.accent, fontWeight: 800 }}>{currentTabRows.filter((r) => selected.has(r.idx)).length}</span>건 선택
+                  이 탭 {currentTabSelectableRows.length}건 중 <span style={{ color: T.accent, fontWeight: 800 }}>{currentTabSelectableRows.filter((r) => selected.has(r.idx)).length}</span>건 선택
                 </span>
                 <button
                   onClick={toggleAllInTab}
@@ -509,12 +532,17 @@ export default function ExcelImportPage() {
                 ⚠️ 중복 의심 항목은 기본적으로 미선택 상태입니다. 확인 후 필요하면 직접 선택하세요.
               </div>
             )}
+            {activeTab === 'excluded' && result.excluded.some((r) => !canReincludeExcluded(r)) && (
+              <div style={{ margin: '8px 16px 12px', padding: '12px 14px', background: T.bgMuted, borderRadius: 12, fontSize: 12, color: T.textSec, fontWeight: 500, lineHeight: 1.6 }}>
+                수입·환불 상계·충전 연결·해외 실청구 통합 건은 다른 내역과 금액이 맞물려 있어 되살릴 수 없어요.
+              </div>
+            )}
 
             {tabRows[activeTab].map((row) => {
               const effectiveCat = rowCategories[row.idx] ?? row.category;
               const effectiveAmount = amountOf(row);
               const cat = categories.find((c) => c.id === effectiveCat);
-              const isReviewable = activeTab !== 'excluded';
+              const isReviewable = activeTab !== 'excluded' || canReincludeExcluded(row);
               const isChecked = selected.has(row.idx);
               const statusInfo = STATUS_LABEL[row.status] ?? { label: row.status, color: T.textTer };
               const isDutchPay = row.status === 'dutch_pay';

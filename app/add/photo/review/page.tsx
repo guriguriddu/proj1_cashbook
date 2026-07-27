@@ -1563,18 +1563,23 @@ function EditTxnSheet({
           </FieldRow>
         </div>
 
-        {/* 액션 버튼 */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <SecondaryButton
-            onClick={onExclude}
-            style={{ flex: 1, color: T.danger }}
-          >
-            제외하기
-          </SecondaryButton>
-          <PrimaryButton onClick={apply} style={{ flex: 1.4 }}>
-            완료
-          </PrimaryButton>
-        </div>
+      </div>
+
+      {/* 액션 버튼 */}
+      <div style={{
+        position: 'sticky', bottom: 0, background: T.bg,
+        padding: '12px 20px 24px', borderTop: `1px solid ${T.divider}`,
+        display: 'flex', gap: 8,
+      }}>
+        <SecondaryButton
+          onClick={onExclude}
+          style={{ flex: 1, color: T.danger }}
+        >
+          제외하기
+        </SecondaryButton>
+        <PrimaryButton onClick={apply} style={{ flex: 1.4 }}>
+          완료
+        </PrimaryButton>
       </div>
     </BottomSheet>
   );

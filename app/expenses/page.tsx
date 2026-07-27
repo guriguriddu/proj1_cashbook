@@ -715,7 +715,10 @@ function ExcludeCategoriesSheet({
           );
         })}
       </div>
-      <div style={{ padding: '0 20px 24px' }}>
+      <div style={{
+        position: 'sticky', bottom: 0, background: T.bg,
+        padding: '12px 20px 24px', borderTop: `1px solid ${T.divider}`,
+      }}>
         <PrimaryButton onClick={() => onApply([...selected])}>적용</PrimaryButton>
       </div>
     </BottomSheet>
@@ -973,14 +976,19 @@ function EditExpenseSheet({ expense, categories: allCategories, onSave, onDelete
             style={{ width: '100%', padding: '12px 16px', border: `1px solid ${T.divider}`, borderRadius: 12, fontSize: 16, fontWeight: 600, outline: 'none', fontFamily: 'Pretendard, system-ui, sans-serif' }} />
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={() => { onDelete(expense.id); onClose(); }}
-            style={{ padding: '14px 20px', border: `1px solid ${T.danger}`, borderRadius: 12, color: T.danger, background: 'transparent', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
-            삭제
-          </button>
-          <div style={{ flex: 1 }}>
-            <PrimaryButton onClick={() => onSave({ ...expense, date, amount: parseInt(amount) || 0, merchant, category, memo })}>저장</PrimaryButton>
-          </div>
+      </div>
+
+      <div style={{
+        position: 'sticky', bottom: 0, background: T.bg,
+        padding: '12px 20px 24px', borderTop: `1px solid ${T.divider}`,
+        display: 'flex', gap: 8,
+      }}>
+        <button type="button" onClick={() => { onDelete(expense.id); onClose(); }}
+          style={{ padding: '14px 20px', border: `1px solid ${T.danger}`, borderRadius: 12, color: T.danger, background: 'transparent', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
+          삭제
+        </button>
+        <div style={{ flex: 1 }}>
+          <PrimaryButton onClick={() => onSave({ ...expense, date, amount: parseInt(amount) || 0, merchant, category, memo })}>저장</PrimaryButton>
         </div>
       </div>
 

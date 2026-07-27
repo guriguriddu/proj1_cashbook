@@ -977,7 +977,12 @@ function EditSheet({
             </div>
           </div>
         )}
+      </div>
 
+      <div style={{
+        position: 'sticky', bottom: 0, background: T.bg,
+        padding: '12px 20px 24px', borderTop: `1px solid ${T.divider}`,
+      }}>
         <PrimaryButton onClick={() => onApply(row, selectedCat, amount, scope)}>적용</PrimaryButton>
       </div>
     </BottomSheet>

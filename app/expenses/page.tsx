@@ -18,7 +18,7 @@ import { getCurrentMonth, getReceiptImageUrl } from '@/lib/supabase-storage';
 import { useExpensesByMonth, useBudget } from '@/hooks/useSupabaseData';
 import * as storage from '@/lib/supabase-storage';
 import { DEFAULT_CATEGORIES, getCategoryById } from '@/constants/categories';
-import type { Expense, BudgetScope } from '@/types';
+import type { Expense, BudgetScope, Category } from '@/types';
 
 function formatWon(amount: number): string {
   return '₩' + Math.abs(Math.round(amount)).toLocaleString('ko-KR');
@@ -113,9 +113,12 @@ function ExpensesContent() {
   // "전체" 볼 때 목록에서 뺄 카테고리 (저장돼서 다음에 열어도 유지)
   const [excludedCats, setExcludedCats] = useState<Set<string>>(new Set());
   const [excludeSheetOpen, setExcludeSheetOpen] = useState(false);
+  // 제외 시트에 커스텀 카테고리까지 보여주기 위한 전체 카테고리 목록(기본 + 직접 추가)
+  const [allCategories, setAllCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
 
   useEffect(() => {
     storage.getExcludedCategories().then((ids) => setExcludedCats(new Set(ids)));
+    storage.getCategories().then(setAllCategories);
   }, []);
 
   // For non-monthly periods: fetch by date range
@@ -552,6 +555,7 @@ function ExpensesContent() {
 
       {excludeSheetOpen && (
         <ExcludeCategoriesSheet
+          categories={allCategories}
           excluded={excludedCats}
           onApply={(ids) => {
             setExcludedCats(new Set(ids));
@@ -653,8 +657,9 @@ function PeriodPickerSheet({
 }
 
 function ExcludeCategoriesSheet({
-  excluded, onApply, onClose,
+  categories, excluded, onApply, onClose,
 }: {
+  categories: Category[];
   excluded: Set<string>;
   onApply: (ids: string[]) => void;
   onClose: () => void;
@@ -676,7 +681,7 @@ function ExcludeCategoriesSheet({
         &lsquo;전체&rsquo;로 볼 때 목록에서 뺄 카테고리를 골라주세요.
       </div>
       <div style={{ padding: '8px 8px 16px' }}>
-        {DEFAULT_CATEGORIES.map((cat) => {
+        {categories.map((cat) => {
           const on = selected.has(cat.id);
           return (
             <button

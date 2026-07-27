@@ -15,7 +15,7 @@ const CAT_MAP: Record<string, string> = {
   '주거/통신': 'telecom',
   '교육/학습': 'education',
   '여행/숙박': 'travel',
-  '의료/건강': 'other',
+  '의료/건강': 'hospital',
   '문화/여가': 'other',
   '경조/선물': 'other',
   '반려동물': 'other',

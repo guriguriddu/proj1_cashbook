@@ -19,9 +19,14 @@ import {
   generateId,
   getSettings,
   saveDefaultTransferCategory,
+  getCategories,
+  addCustomCategory,
 } from '@/lib/supabase-storage';
-import type { Expense } from '@/types';
+import type { Expense, Category } from '@/types';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
+
+// 새 카테고리 자동 배정 색상 (커스텀 카테고리가 늘어날 때 순환)
+const NEW_CATEGORY_COLORS = ['#F43F5E', '#F59E0B', '#84CC16', '#14B8A6', '#0EA5E9', '#8B5CF6', '#EC4899', '#78716C'];
 
 type Stage = 'upload' | 'processing' | 'review' | 'saving' | 'done';
 type ReviewTab = 'include' | 'review' | 'excluded';
@@ -61,10 +66,29 @@ export default function ExcelImportPage() {
   const [rowCategories, setRowCategories] = useState<Record<number, string>>({});
   const [rowAmounts, setRowAmounts] = useState<Record<number, number>>({});
   const [editRow, setEditRow] = useState<ParsedRow | null>(null);
+  // 사용 가능한 카테고리 목록(기본 + 직접 추가한 것) — 편집 시트에서 바로 추가 가능
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+
+  const refreshCategories = useCallback(async () => {
+    const cats = await getCategories();
+    setCategories(cats);
+  }, []);
 
   useEffect(() => {
     getSettings().then((s) => setDefaultTransferCat(s.defaultTransferCategory ?? 'food'));
+    getCategories().then(setCategories);
   }, []);
+
+  const handleAddCategory = useCallback(
+    async (name: string, icon: string): Promise<string> => {
+      const id = `custom_${generateId()}`;
+      const color = NEW_CATEGORY_COLORS[categories.filter((c) => c.isCustom).length % NEW_CATEGORY_COLORS.length];
+      await addCustomCategory({ id, name, icon, color, keywords: [] });
+      await refreshCategories();
+      return id;
+    },
+    [categories, refreshCategories]
+  );
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -475,7 +499,7 @@ export default function ExcelImportPage() {
             {tabRows[activeTab].map((row) => {
               const effectiveCat = rowCategories[row.idx] ?? row.category;
               const effectiveAmount = amountOf(row);
-              const cat = DEFAULT_CATEGORIES.find((c) => c.id === effectiveCat);
+              const cat = categories.find((c) => c.id === effectiveCat);
               const isReviewable = activeTab !== 'excluded';
               const isChecked = selected.has(row.idx);
               const statusInfo = STATUS_LABEL[row.status] ?? { label: row.status, color: T.textTer };
@@ -621,10 +645,12 @@ export default function ExcelImportPage() {
       {editRow && (
         <EditSheet
           row={editRow}
+          categories={categories}
           currentCategory={rowCategories[editRow.idx] ?? editRow.category}
           currentAmount={rowAmounts[editRow.idx] ?? editRow.amount}
           onClose={() => setEditRow(null)}
           onApply={applyEdit}
+          onAddCategory={handleAddCategory}
         />
       )}
     </Screen>
@@ -633,22 +659,39 @@ export default function ExcelImportPage() {
 
 function EditSheet({
   row,
+  categories,
   currentCategory,
   currentAmount,
   onClose,
   onApply,
+  onAddCategory,
 }: {
   row: ParsedRow;
+  categories: Category[];
   currentCategory: string;
   currentAmount: number;
   onClose: () => void;
   onApply: (row: ParsedRow, cat: string, amount: number, scope: 'this' | 'all') => void;
+  onAddCategory: (name: string, icon: string) => Promise<string>;
 }) {
   const [selectedCat, setSelectedCat] = useState(currentCategory);
   const [amount, setAmount] = useState(currentAmount);
   const [scope, setScope] = useState<'this' | 'all'>('this');
+  const [addingCat, setAddingCat] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatIcon, setNewCatIcon] = useState('🏷️');
   const isTransfer = row.status === 'transfer_nudge';
-  const cats = DEFAULT_CATEGORIES.filter((c) => c.id !== 'other');
+  const cats = categories;
+
+  const submitNewCategory = async () => {
+    const name = newCatName.trim();
+    if (!name) return;
+    const id = await onAddCategory(name, newCatIcon.trim() || '🏷️');
+    setSelectedCat(id);
+    setAddingCat(false);
+    setNewCatName('');
+    setNewCatIcon('🏷️');
+  };
 
   return (
     <BottomSheet open onClose={onClose} title="금액·카테고리 수정" height="85%">
@@ -702,7 +745,7 @@ function EditSheet({
 
         {/* 카테고리 그리드 */}
         <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, marginBottom: 10 }}>카테고리</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
           {cats.map((cat) => (
             <button
               key={cat.id}
@@ -720,7 +763,65 @@ function EditSheet({
               </span>
             </button>
           ))}
+          <button
+            onClick={() => setAddingCat((v) => !v)}
+            style={{
+              border: `1.5px dashed ${T.divider}`, padding: '10px 4px', borderRadius: 12, cursor: 'pointer',
+              background: addingCat ? T.bgMuted : 'transparent',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+            }}
+          >
+            <div style={{
+              width: 28, height: 28, borderRadius: 8, background: T.bgMuted,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 16, fontWeight: 700, color: T.textSec,
+            }}>
+              +
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 600, color: T.textSec }}>추가</span>
+          </button>
         </div>
+
+        {/* 카테고리 직접 추가 폼 */}
+        {addingCat && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <input
+              type="text"
+              value={newCatIcon}
+              onChange={(e) => setNewCatIcon(e.target.value.slice(0, 2))}
+              placeholder="🏷️"
+              style={{
+                width: 44, textAlign: 'center', border: `1px solid ${T.divider}`, borderRadius: 10,
+                padding: '10px 0', fontSize: 18, fontFamily: 'Pretendard, system-ui, sans-serif',
+              }}
+            />
+            <input
+              type="text"
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitNewCategory(); }}
+              placeholder="카테고리 이름"
+              autoFocus
+              style={{
+                flex: 1, border: `1px solid ${T.divider}`, borderRadius: 10,
+                padding: '10px 12px', fontSize: 14, fontFamily: 'Pretendard, system-ui, sans-serif',
+              }}
+            />
+            <button
+              onClick={submitNewCategory}
+              disabled={!newCatName.trim()}
+              style={{
+                border: 0, borderRadius: 10, padding: '10px 16px', fontSize: 13, fontWeight: 700,
+                background: newCatName.trim() ? T.accent : T.bgMuted,
+                color: newCatName.trim() ? '#fff' : T.textTer,
+                cursor: newCatName.trim() ? 'pointer' : 'default',
+                fontFamily: 'Pretendard, system-ui, sans-serif',
+              }}
+            >
+              추가
+            </button>
+          </div>
+        )}
 
         {/* 이체 행만: 이번만 / 앞으로 쭉 */}
         {isTransfer && (

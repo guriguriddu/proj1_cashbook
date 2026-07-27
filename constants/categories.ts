@@ -109,6 +109,19 @@ export const DEFAULT_CATEGORIES: Category[] = [
     order: 8,
   },
   {
+    id: 'hospital',
+    name: '병원',
+    icon: '🏥',
+    color: '#EF4444', // red-500
+    keywords: [
+      '병원', '의원', '치과', '한의원', '피부과', '이비인후과',
+      '정형외과', '내과', '외과', '산부인과', '소아과', '안과',
+      '비뇨기과', '신경외과', '재활의학과', '가정의학과',
+      '약국', '응급실', '검진', '건강검진', '진료', '처방',
+    ],
+    order: 9,
+  },
+  {
     id: 'travel',
     name: '여행',
     icon: '✈️',
@@ -119,7 +132,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
       '트립닷컴', '아고다', '부킹닷컴', '익스피디아', '호텔스컴바인',
       '여행', '항공', '비행기', '렌터카', '렌트카',
     ],
-    order: 9,
+    order: 10,
   },
   {
     id: 'cash',
@@ -129,7 +142,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     keywords: [
       'ATM', '현금', '출금', '인출',
     ],
-    order: 10,
+    order: 11,
   },
   {
     id: 'saving',
@@ -137,7 +150,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     icon: '🐷',
     color: '#0EA5E9', // sky-500
     keywords: ['저축', '적금', '예금', '저금', '비상금'],
-    order: 11,
+    order: 12,
   },
   {
     id: 'other',

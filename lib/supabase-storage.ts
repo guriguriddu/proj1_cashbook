@@ -731,6 +731,47 @@ export async function saveDefaultTransferCategory(categoryId: string): Promise<v
   });
 }
 
+// 내역 화면: "전체" 볼 때 목록에서 뺄 카테고리 목록 저장
+export async function getExcludedCategories(): Promise<string[]> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data } = await supabase
+    .from('user_settings')
+    .select('merchant_categories')
+    .eq('user_id', user.id)
+    .single();
+
+  const merchantCats = (data?.merchant_categories as Record<string, string>) || {};
+  try {
+    return JSON.parse(merchantCats['__excluded_categories'] || '[]');
+  } catch {
+    return [];
+  }
+}
+
+export async function saveExcludedCategories(categoryIds: string[]): Promise<void> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data } = await supabase
+    .from('user_settings')
+    .select('merchant_categories')
+    .eq('user_id', user.id)
+    .single();
+
+  const current: Record<string, string> = (data?.merchant_categories as Record<string, string>) || {};
+  current['__excluded_categories'] = JSON.stringify(categoryIds);
+
+  await supabase.from('user_settings').upsert({
+    user_id: user.id,
+    merchant_categories: current,
+    updated_at: new Date().toISOString(),
+  });
+}
+
 // 연말정산: 분류 불가 결제수단 → 신용/체크/제외 직접 지정 저장
 export async function getPayBucketOverrides(): Promise<Record<string, PayOverride>> {
   const supabase = getSupabase();

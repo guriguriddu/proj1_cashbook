@@ -110,6 +110,13 @@ function ExpensesContent() {
   const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [budgetEditCat, setBudgetEditCat] = useState<string | null>(null);
+  // "전체" 볼 때 목록에서 뺄 카테고리 (저장돼서 다음에 열어도 유지)
+  const [excludedCats, setExcludedCats] = useState<Set<string>>(new Set());
+  const [excludeSheetOpen, setExcludeSheetOpen] = useState(false);
+
+  useEffect(() => {
+    storage.getExcludedCategories().then((ids) => setExcludedCats(new Set(ids)));
+  }, []);
 
   // For non-monthly periods: fetch by date range
   const [rangeExpenses, setRangeExpenses] = useState<Expense[]>([]);
@@ -149,8 +156,8 @@ function ExpensesContent() {
   }
 
   // Non-month range data
-  const rangeFiltered = rangeExpenses.filter(
-    (e) => filterCat === 'all' || e.category === filterCat
+  const rangeFiltered = rangeExpenses.filter((e) =>
+    filterCat === 'all' ? !excludedCats.has(e.category) : e.category === filterCat
   );
   const rangeTotal = rangeFiltered.reduce((a, e) => a + e.amount, 0);
   const rangePresentCats = new Set(rangeExpenses.map((e) => e.category));
@@ -178,8 +185,8 @@ function ExpensesContent() {
   const rangeGrouped = buildGrouped(rangeFiltered);
 
   // Monthly list data
-  const filtered = monthExpenses.filter(
-    (e) => filterCat === 'all' || e.category === filterCat
+  const filtered = monthExpenses.filter((e) =>
+    filterCat === 'all' ? !excludedCats.has(e.category) : e.category === filterCat
   );
   const filteredTotal = filtered.reduce((a, e) => a + e.amount, 0);
   const count = filtered.length;
@@ -340,6 +347,20 @@ function ExpensesContent() {
               ))}
             </div>
             <button
+              onClick={() => setExcludeSheetOpen(true)}
+              style={{
+                flexShrink: 0, margin: '0 0 12px 8px', padding: '6px 10px', height: 32,
+                background: excludedCats.size > 0 ? T.dangerSoft : T.bgMuted, borderRadius: 999,
+                fontSize: 11, fontWeight: 600, color: excludedCats.size > 0 ? T.danger : T.textSec,
+                border: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap',
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                <path d="M2 4h12M4.5 8h7M6.5 12h3" stroke={excludedCats.size > 0 ? T.danger : T.textSec} strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              {excludedCats.size > 0 ? `${excludedCats.size}개 제외` : '제외'}
+            </button>
+            <button
               onClick={() => setSort(sort === 'date' ? 'amount' : 'date')}
               style={{
                 flexShrink: 0, margin: '0 16px 12px 8px', padding: '6px 10px', height: 32,
@@ -451,6 +472,20 @@ function ExpensesContent() {
               ))}
             </div>
             <button
+              onClick={() => setExcludeSheetOpen(true)}
+              style={{
+                flexShrink: 0, margin: '0 0 12px 8px', padding: '6px 10px', height: 32,
+                background: excludedCats.size > 0 ? T.dangerSoft : T.bgMuted, borderRadius: 999,
+                fontSize: 11, fontWeight: 600, color: excludedCats.size > 0 ? T.danger : T.textSec,
+                border: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap',
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                <path d="M2 4h12M4.5 8h7M6.5 12h3" stroke={excludedCats.size > 0 ? T.danger : T.textSec} strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              {excludedCats.size > 0 ? `${excludedCats.size}개 제외` : '제외'}
+            </button>
+            <button
               onClick={() => setSort(sort === 'date' ? 'amount' : 'date')}
               style={{
                 flexShrink: 0, margin: '0 16px 12px 8px', padding: '6px 10px', height: 32,
@@ -512,6 +547,18 @@ function ExpensesContent() {
             setMonthSheetOpen(false);
           }}
           onClose={() => setMonthSheetOpen(false)}
+        />
+      )}
+
+      {excludeSheetOpen && (
+        <ExcludeCategoriesSheet
+          excluded={excludedCats}
+          onApply={(ids) => {
+            setExcludedCats(new Set(ids));
+            storage.saveExcludedCategories(ids);
+            setExcludeSheetOpen(false);
+          }}
+          onClose={() => setExcludeSheetOpen(false)}
         />
       )}
 
@@ -600,6 +647,70 @@ function PeriodPickerSheet({
             </button>
           );
         })}
+      </div>
+    </BottomSheet>
+  );
+}
+
+function ExcludeCategoriesSheet({
+  excluded, onApply, onClose,
+}: {
+  excluded: Set<string>;
+  onApply: (ids: string[]) => void;
+  onClose: () => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set(excluded));
+
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <BottomSheet open onClose={onClose} title="카테고리 제외" height="75%">
+      <div style={{ padding: '0 20px 8px', fontSize: 13, color: T.textSec, lineHeight: 1.5 }}>
+        &lsquo;전체&rsquo;로 볼 때 목록에서 뺄 카테고리를 골라주세요.
+      </div>
+      <div style={{ padding: '8px 8px 16px' }}>
+        {DEFAULT_CATEGORIES.map((cat) => {
+          const on = selected.has(cat.id);
+          return (
+            <button
+              key={cat.id}
+              onClick={() => toggle(cat.id)}
+              style={{
+                width: '100%', border: 0, background: 'transparent',
+                display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px',
+                borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+                fontFamily: 'Pretendard, system-ui, sans-serif',
+              }}
+            >
+              <CatIcon catId={cat.id} size={32} icon={cat.icon} color={cat.color} />
+              <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: on ? T.textTer : T.text, textDecoration: on ? 'line-through' : 'none' }}>
+                {cat.name}
+              </span>
+              <div style={{
+                width: 20, height: 20, borderRadius: 6, flexShrink: 0,
+                border: `1.5px solid ${on ? T.danger : T.divider}`,
+                background: on ? T.danger : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {on && (
+                  <svg width="11" height="9" viewBox="0 0 13 10" fill="none">
+                    <path d="M1.5 5l3.5 3.5 7-7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ padding: '0 20px 24px' }}>
+        <PrimaryButton onClick={() => onApply([...selected])}>적용</PrimaryButton>
       </div>
     </BottomSheet>
   );

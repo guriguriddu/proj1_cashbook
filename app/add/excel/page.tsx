@@ -248,9 +248,9 @@ export default function ExcelImportPage() {
             return next;
           });
         }
-      } else {
-        // 같은 배치 안의 동일 가맹점 다른 행에도 즉시 반영 — 저장 전이라 DB 학습이
-        // 아직 안 먹으니, 이번 검수 내에서라도 같은 가맹점이면 바로 같이 바뀌게 한다.
+      } else if (scope === 'all') {
+        // 사용자가 "같은 가맹점 전체"를 명시적으로 골랐을 때만 다른 행에도 반영.
+        // 저장 전이라 DB 학습이 아직 안 먹는 구간을 이렇게 메운다(자동 전파는 안 함 — 의도치 않게 바뀌는 걸 막기 위함).
         const merchantKey = normMerchant(row.merchant);
         setRowCategories((prev) => {
           const next = { ...prev, [row.idx]: newCat };
@@ -264,6 +264,8 @@ export default function ExcelImportPage() {
           }
           return next;
         });
+      } else {
+        setRowCategories((prev) => ({ ...prev, [row.idx]: newCat }));
       }
       setEditRow(null);
     },
@@ -690,6 +692,13 @@ export default function ExcelImportPage() {
           categories={categories}
           currentCategory={rowCategories[editRow.idx] ?? editRow.category}
           currentAmount={rowAmounts[editRow.idx] ?? editRow.amount}
+          sameMerchantCount={
+            result
+              ? [...result.toInclude, ...result.needsReview, ...result.excluded].filter(
+                  (r) => r.idx !== editRow.idx && normMerchant(r.merchant) === normMerchant(editRow.merchant)
+                ).length
+              : 0
+          }
           onClose={() => setEditRow(null)}
           onApply={applyEdit}
           onAddCategory={handleAddCategory}
@@ -704,6 +713,7 @@ function EditSheet({
   categories,
   currentCategory,
   currentAmount,
+  sameMerchantCount,
   onClose,
   onApply,
   onAddCategory,
@@ -712,6 +722,7 @@ function EditSheet({
   categories: Category[];
   currentCategory: string;
   currentAmount: number;
+  sameMerchantCount: number;
   onClose: () => void;
   onApply: (row: ParsedRow, cat: string, amount: number, scope: 'this' | 'all') => void;
   onAddCategory: (name: string, icon: string) => Promise<string>;
@@ -927,14 +938,17 @@ function EditSheet({
           </div>
         )}
 
-        {/* 이체 행만: 이번만 / 앞으로 쭉 */}
-        {isTransfer && (
+        {/* 카테고리를 바꿨고 같은 가맹점 다른 행이 있을 때: 이번 것만 / 전체 다 */}
+        {(isTransfer || (sameMerchantCount > 0 && selectedCat !== currentCategory)) && (
           <div style={{ marginBottom: 16, borderTop: `1px solid ${T.divider}`, paddingTop: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, marginBottom: 10 }}>적용 범위</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {([
+              {(isTransfer ? [
                 { value: 'this' as const, label: '이번만', sub: '이 항목에만 적용' },
                 { value: 'all' as const, label: '앞으로 쭉', sub: '타인 송금 기본 카테고리로 저장' },
+              ] : [
+                { value: 'this' as const, label: '이번 항목만', sub: '이 항목에만 적용' },
+                { value: 'all' as const, label: `같은 가맹점 전체 (${sameMerchantCount + 1}건)`, sub: '이번 배치 안의 동일 가맹점 다른 행도 함께 변경' },
               ]).map((opt) => (
                 <button
                   key={opt.value}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Screen,
@@ -12,9 +12,9 @@ import {
   BottomSheet,
   CatIcon,
 } from '@/components/ui';
-import { saveExpense, generateId, getTodayDate } from '@/lib/supabase-storage';
+import { saveExpense, generateId, getTodayDate, getCategories } from '@/lib/supabase-storage';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
-import type { Expense } from '@/types';
+import type { Expense, Category } from '@/types';
 
 export default function ManualAddPage() {
   const router = useRouter();
@@ -24,8 +24,13 @@ export default function ManualAddPage() {
   const [date, setDate] = useState(getTodayDate());
   const [memo, setMemo] = useState('');
   const [catSheetOpen, setCatSheetOpen] = useState(false);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
 
-  const cat = DEFAULT_CATEGORIES.find((c) => c.id === catId) || DEFAULT_CATEGORIES[0];
+  useEffect(() => {
+    getCategories().then(setCategories);
+  }, []);
+
+  const cat = categories.find((c) => c.id === catId) || categories[0];
 
   const pressKey = (k: string) => {
     if (k === 'del') {
@@ -226,6 +231,7 @@ export default function ManualAddPage() {
         height="70%"
       >
         <CategoryPicker
+          categories={categories}
           catId={catId}
           onPick={(cid) => {
             setCatId(cid);
@@ -307,13 +313,15 @@ function Numpad({ onKey }: { onKey: (k: string) => void }) {
 }
 
 function CategoryPicker({
+  categories: allCategories,
   catId,
   onPick,
 }: {
+  categories: Category[];
   catId: string;
   onPick: (cid: string) => void;
 }) {
-  const categories = DEFAULT_CATEGORIES.filter((c) => c.id !== 'other');
+  const categories = allCategories.filter((c) => c.id !== 'other');
 
   return (
     <div>

@@ -578,6 +578,7 @@ function ExpensesContent() {
       {editingExpense && (
         <EditExpenseSheet
           expense={editingExpense}
+          categories={allCategories}
           onSave={handleSaveEdit}
           onDelete={handleDelete}
           onClose={() => setEditingExpense(null)}
@@ -911,8 +912,8 @@ function QuickBudgetSheet({ cat, value, month, onClose, onSave }: {
   );
 }
 
-function EditExpenseSheet({ expense, onSave, onDelete, onClose }: {
-  expense: Expense; onSave: (e: Expense) => void; onDelete: (id: string) => void; onClose: () => void;
+function EditExpenseSheet({ expense, categories: allCategories, onSave, onDelete, onClose }: {
+  expense: Expense; categories: Category[]; onSave: (e: Expense) => void; onDelete: (id: string) => void; onClose: () => void;
 }) {
   const [date, setDate] = useState(expense.date);
   const [amount, setAmount] = useState(String(expense.amount));
@@ -926,7 +927,7 @@ function EditExpenseSheet({ expense, onSave, onDelete, onClose }: {
     if (expense.imageUrl) getReceiptImageUrl(expense.imageUrl).then(setImageUrl);
   }, [expense.imageUrl]);
 
-  const categories = DEFAULT_CATEGORIES.filter((c) => c.id !== 'other');
+  const categories = allCategories.filter((c) => c.id !== 'other');
 
   return (
     <BottomSheet open onClose={onClose} title="지출 수정" height="85%">

@@ -19,8 +19,9 @@ import {
   saveExpenses,
   generateId,
   saveDefaultTransferCategory,
+  getCategories,
 } from '@/lib/supabase-storage';
-import type { Expense } from '@/types';
+import type { Expense, Category } from '@/types';
 import { DEFAULT_CATEGORIES } from '@/constants/categories';
 import { saveImportLog } from '@/lib/import-log';
 
@@ -61,11 +62,13 @@ export default function ImportPage() {
   const [error, setError] = useState('');
   const [rowCategories, setRowCategories] = useState<Record<number, string>>({});
   const [catSheetRow, setCatSheetRow] = useState<ParsedRow | null>(null);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
 
   // 이체 기본 카테고리 (미사용 — AI가 자동 분류, 필요시 개별 변경)
   const [, setDefaultTransferCat] = useState('food');
   useEffect(() => {
     import('@/lib/supabase-storage').then(m => m.getSettings().then(s => setDefaultTransferCat(s.defaultTransferCategory ?? 'food')));
+    getCategories().then(setCategories);
   }, []);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -382,7 +385,7 @@ export default function ImportPage() {
 
             {tabRows[activeTab].map((row) => {
               const effectiveCat = rowCategories[row.idx] ?? row.category;
-              const cat = DEFAULT_CATEGORIES.find((c) => c.id === effectiveCat);
+              const cat = categories.find((c) => c.id === effectiveCat);
               const isReviewable = activeTab !== 'excluded';
               const isExcludedItem = activeTab === 'excluded';
               const isChecked = selected.has(row.idx);
@@ -492,6 +495,7 @@ export default function ImportPage() {
       {catSheetRow && (
         <CategoryChangeSheet
           row={catSheetRow}
+          categories={categories}
           currentCategory={rowCategories[catSheetRow.idx] ?? catSheetRow.category}
           onClose={() => setCatSheetRow(null)}
           onApply={applyCategoryChange}
@@ -502,9 +506,10 @@ export default function ImportPage() {
 }
 
 function CategoryChangeSheet({
-  row, currentCategory, onClose, onApply,
+  row, categories, currentCategory, onClose, onApply,
 }: {
   row: ParsedRow;
+  categories: Category[];
   currentCategory: string;
   onClose: () => void;
   onApply: (row: ParsedRow, cat: string, scope: 'this' | 'all') => void;
@@ -512,7 +517,7 @@ function CategoryChangeSheet({
   const [selectedCat, setSelectedCat] = useState(currentCategory);
   const [scope, setScope] = useState<'this' | 'all'>('this');
   const isTransfer = row.status === 'transfer_nudge';
-  const cats = DEFAULT_CATEGORIES.filter((c) => c.id !== 'other');
+  const cats = categories.filter((c) => c.id !== 'other');
 
   return (
     <BottomSheet open onClose={onClose} title="카테고리 변경" height="80%">

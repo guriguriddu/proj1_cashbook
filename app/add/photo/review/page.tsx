@@ -16,11 +16,11 @@ import {
   FieldRow,
   DatePicker,
 } from '@/components/ui';
-import { saveExpenses, generateId, getExpenses, updateExpense } from '@/lib/supabase-storage';
+import { saveExpenses, generateId, getExpenses, updateExpense, getCategories } from '@/lib/supabase-storage';
 import { saveImportLog } from '@/lib/import-log';
 import { formatDateShort, groupByDate } from '@/lib/utils';
 import { DEFAULT_CATEGORIES, getCategoryById } from '@/constants/categories';
-import type { ExtractedTransaction, Expense } from '@/types';
+import type { ExtractedTransaction, Expense, Category } from '@/types';
 
 interface ReviewItem extends ExtractedTransaction {
   excluded: boolean;
@@ -116,6 +116,11 @@ export default function OCRReviewPage() {
     expenseId: string; merchant: string; date: string;
     originalAmount: number; myShare: number; peopleCount: number;
   }[]>([]);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+
+  useEffect(() => {
+    getCategories().then(setCategories);
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -846,6 +851,7 @@ export default function OCRReviewPage() {
                 <OCRRow
                   key={it.id}
                   item={it}
+                  categories={categories}
                   last={idx === arr.length - 1}
                   onTap={() => setEditing(it.id)}
                   onExclude={() => setExcludeConfirm(it.id)}
@@ -988,6 +994,7 @@ export default function OCRReviewPage() {
       {editing && (
         <EditTxnSheet
           item={items.find((i) => i.id === editing)!}
+          categories={categories}
           onClose={() => setEditing(null)}
           onChange={(patch) => {
             update(editing, patch);
@@ -1212,16 +1219,18 @@ function formatDateLabel(dateStr: string): string {
 // OCR 행 컴포넌트
 function OCRRow({
   item,
+  categories,
   last,
   onTap,
   onExclude,
 }: {
   item: ReviewItem;
+  categories: Category[];
   last: boolean;
   onTap: () => void;
   onExclude: () => void;
 }) {
-  const category = getCategoryById(item.suggestedCategory);
+  const category = categories.find((c) => c.id === item.suggestedCategory) ?? getCategoryById(item.suggestedCategory);
   const needsReview = item.confidence && item.confidence < 0.8;
   const hasCancelMatch = item.cancelledBy || item.cancels;
   const hasDuplicateIssue = item.isExistingDuplicate || item.isDuplicate;
@@ -1388,11 +1397,13 @@ function OCRRow({
 // 편집 바텀시트
 function EditTxnSheet({
   item,
+  categories,
   onClose,
   onChange,
   onExclude,
 }: {
   item: ReviewItem;
+  categories: Category[];
   onClose: () => void;
   onChange: (patch: Partial<ReviewItem>) => void;
   onExclude: () => void;
@@ -1411,7 +1422,7 @@ function EditTxnSheet({
     });
   };
 
-  const category = getCategoryById(catId);
+  const category = categories.find((c) => c.id === catId) ?? getCategoryById(catId);
 
   return (
     <BottomSheet open onClose={onClose} title="거래 편집" height="80%">
@@ -1535,7 +1546,7 @@ function EditTxnSheet({
                 cursor: 'pointer',
               }}
             >
-              {DEFAULT_CATEGORIES.map((cat) => (
+              {categories.map((cat) => (
                 <option key={cat.id} value={cat.id}>
                   {cat.icon} {cat.name}
                 </option>

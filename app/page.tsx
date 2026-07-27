@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Screen,
@@ -9,6 +10,7 @@ import {
   ProgressBar,
   Badge,
   CatIcon,
+  MonthPickerSheet,
 } from '@/components/ui';
 import { useExpensesByMonth, useMonthlySummary, useCategories } from '@/hooks/useSupabaseData';
 import { getCurrentMonth } from '@/lib/supabase-storage';
@@ -24,7 +26,17 @@ function formatWon(amount: number): string {
 
 export default function HomePage() {
   const router = useRouter();
-  const currentMonth = getCurrentMonth();
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [monthSheetOpen, setMonthSheetOpen] = useState(false);
+  const todayMonth = getCurrentMonth();
+  const currentMonth = (() => {
+    const [y, m] = todayMonth.split('-').map(Number);
+    const idx = y * 12 + (m - 1) + monthOffset;
+    const yy = Math.floor(idx / 12);
+    const mm = (idx % 12) + 1;
+    return `${yy}-${String(mm).padStart(2, '0')}`;
+  })();
+  const isCurrentMonth = monthOffset === 0;
   const daysLeft = getDaysRemaining();
 
   const { expenses, loading: expensesLoading } = useExpensesByMonth(currentMonth);
@@ -113,7 +125,7 @@ export default function HomePage() {
         }}
       >
         <button
-          onClick={() => {/* 월 선택 기능 */}}
+          onClick={() => setMonthSheetOpen(true)}
           style={{
             border: 0,
             background: 'transparent',
@@ -205,7 +217,7 @@ export default function HomePage() {
                   letterSpacing: '-0.01em',
                 }}
               >
-                이번 달 사용 금액
+                {isCurrentMonth ? '이번 달' : monthLabel} 사용 금액
               </span>
               <button
                 onClick={() => router.push('/add')}
@@ -301,7 +313,7 @@ export default function HomePage() {
                 </span>
                 {over && <Badge tone="danger">예산 초과</Badge>}
               </div>
-              <div style={{ color: T.textTer }}>{daysLeft}일 남음</div>
+              {isCurrentMonth && <div style={{ color: T.textTer }}>{daysLeft}일 남음</div>}
             </div>
           </div>
         </div>
@@ -326,7 +338,7 @@ export default function HomePage() {
               }}
             >
               <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>
-                이번 달 상세 내역
+                {isCurrentMonth ? '이번 달' : monthLabel} 상세 내역
               </div>
               <button
                 onClick={() => router.push('/expenses')}
@@ -452,6 +464,20 @@ export default function HomePage() {
           </div>
         </div>
       </ScreenBody>
+
+      {monthSheetOpen && (
+        <MonthPickerSheet
+          current={currentMonth}
+          onPick={(m) => {
+            const [y, mo] = m.split('-').map(Number);
+            const [ty, tm] = todayMonth.split('-').map(Number);
+            const diff = y * 12 + (mo - 1) - (ty * 12 + (tm - 1));
+            setMonthOffset(diff);
+            setMonthSheetOpen(false);
+          }}
+          onClose={() => setMonthSheetOpen(false)}
+        />
+      )}
     </Screen>
   );
 }

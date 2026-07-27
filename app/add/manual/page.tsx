@@ -350,7 +350,7 @@ function CategoryPicker({
               position: 'relative',
             }}
           >
-            <CatIcon catId={c.id} size={36} />
+            <CatIcon catId={c.id} size={36} icon={c.icon} color={c.color} />
             <div
               style={{
                 fontSize: 12,

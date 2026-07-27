@@ -166,7 +166,7 @@ function ExpensesContent() {
   const rangePresentCats = new Set(rangeExpenses.map((e) => e.category));
   const rangeChips = [
     { id: 'all', name: '전체', color: T.text },
-    ...DEFAULT_CATEGORIES.filter((c) => rangePresentCats.has(c.id)).map((c) => ({
+    ...allCategories.filter((c) => rangePresentCats.has(c.id)).map((c) => ({
       id: c.id, name: c.name, color: c.color,
     })),
   ];
@@ -198,12 +198,12 @@ function ExpensesContent() {
   const presentCats = new Set(monthExpenses.map((e) => e.category));
   const chips = [
     { id: 'all', name: '전체', color: T.text },
-    ...DEFAULT_CATEGORIES.filter((c) => presentCats.has(c.id)).map((c) => ({
+    ...allCategories.filter((c) => presentCats.has(c.id)).map((c) => ({
       id: c.id, name: c.name, color: c.color,
     })),
   ];
 
-  const catData = filterCat !== 'all' ? DEFAULT_CATEGORIES.find((c) => c.id === filterCat) : null;
+  const catData = filterCat !== 'all' ? allCategories.find((c) => c.id === filterCat) : null;
   const catBudget = catData ? budget.categoryBudgets[catData.id] || 0 : 0;
   const catPct = catBudget > 0 ? (filteredTotal / catBudget) * 100 : 0;
 
@@ -288,7 +288,7 @@ function ExpensesContent() {
             <MoneyText value={filteredTotal} size={28} weight={800} />
 
             {filterCat === 'all' && (() => {
-              const totalBudget = DEFAULT_CATEGORIES.reduce((a, c) => a + storage.getCategoryBudgetForMonth(budget, monthKey, c.id), 0);
+              const totalBudget = allCategories.reduce((a, c) => a + storage.getCategoryBudgetForMonth(budget, monthKey, c.id), 0);
               const totalPct = totalBudget > 0 ? (filteredTotal / totalBudget) * 100 : 0;
               return (
                 <div style={{ marginTop: 14 }}>
@@ -395,7 +395,7 @@ function ExpensesContent() {
                 )}
                 <div>
                   {g.items.map((e) => (
-                    <ExpenseRow key={e.id} e={e} onClick={() => setEditingExpense(e)} onDelete={() => handleDelete(e.id, true)} />
+                    <ExpenseRow key={e.id} e={e} categories={allCategories} onClick={() => setEditingExpense(e)} onDelete={() => handleDelete(e.id, true)} />
                   ))}
                 </div>
               </div>
@@ -529,7 +529,7 @@ function ExpensesContent() {
                   )}
                   <div>
                     {g.items.map((e) => (
-                      <ExpenseRow key={e.id} e={e} onClick={() => setEditingExpense(e)} />
+                      <ExpenseRow key={e.id} e={e} categories={allCategories} onClick={() => setEditingExpense(e)} />
                     ))}
                   </div>
                 </div>
@@ -586,7 +586,7 @@ function ExpensesContent() {
       )}
 
       {budgetEditCat && (() => {
-        const cat = DEFAULT_CATEGORIES.find((c) => c.id === budgetEditCat)!;
+        const cat = allCategories.find((c) => c.id === budgetEditCat)!;
         const currentAmt = storage.getCategoryBudgetForMonth(budget, monthKey, budgetEditCat);
         return (
           <QuickBudgetSheet
@@ -724,8 +724,8 @@ function ExcludeCategoriesSheet({
 
 const DELETE_BTN_WIDTH = 76;
 
-function ExpenseRow({ e, onClick, onDelete }: { e: Expense; onClick: () => void; onDelete?: () => void }) {
-  const cat = getCategoryById(e.category);
+function ExpenseRow({ e, categories, onClick, onDelete }: { e: Expense; categories: Category[]; onClick: () => void; onDelete?: () => void }) {
+  const cat = categories.find((c) => c.id === e.category) ?? getCategoryById(e.category);
   const [swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -794,7 +794,7 @@ function ExpenseRow({ e, onClick, onDelete }: { e: Expense; onClick: () => void;
           transition: (swipeX === 0 || swipeX === DELETE_BTN_WIDTH) ? 'transform 0.2s ease, background 0.2s' : 'none',
         }}
       >
-        <CatIcon catId={e.category} size={36} />
+        <CatIcon catId={e.category} size={36} icon={cat?.icon} color={cat?.color} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>
             {e.merchant}
@@ -960,7 +960,7 @@ function EditExpenseSheet({ expense, categories: allCategories, onSave, onDelete
             {categories.map((cat) => (
               <button key={cat.id} type="button" onClick={() => setCategory(cat.id)}
                 style={{ border: category === cat.id ? `2px solid ${cat.color}` : `1px solid ${T.divider}`, padding: '10px 4px', borderRadius: 12, cursor: 'pointer', background: category === cat.id ? cat.color + '12' : 'transparent', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <CatIcon catId={cat.id} size={28} />
+                <CatIcon catId={cat.id} size={28} icon={cat.icon} color={cat.color} />
                 <span style={{ fontSize: 11, fontWeight: 600, color: category === cat.id ? cat.color : T.textSec }}>{cat.name}</span>
               </button>
             ))}

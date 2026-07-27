@@ -906,7 +906,12 @@ export default function OCRReviewPage() {
                       <span style={{ fontSize: 10, color: T.textTer }}>결제 후 취소 · 순액 0원</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <CatIcon catId={rep.suggestedCategory} size={34} />
+                      <CatIcon
+                        catId={rep.suggestedCategory}
+                        size={34}
+                        icon={categories.find((c) => c.id === rep.suggestedCategory)?.icon}
+                        color={categories.find((c) => c.id === rep.suggestedCategory)?.color}
+                      />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{
                           fontSize: 14, fontWeight: 600, color: T.textSec,
@@ -1282,7 +1287,7 @@ function OCRRow({
           padding: 0,
         }}
       >
-        <CatIcon catId={item.suggestedCategory} size={40} />
+        <CatIcon catId={item.suggestedCategory} size={40} icon={category?.icon} color={category?.color} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{

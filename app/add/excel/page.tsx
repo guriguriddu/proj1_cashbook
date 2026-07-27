@@ -12,7 +12,7 @@ import {
   CatIcon,
   BottomSheet,
 } from '@/components/ui';
-import { detectMonths, parseExcel, type ParsedRow, type ExcelParseResult } from '@/lib/excel-import';
+import { detectMonths, parseExcel, normMerchant, type ParsedRow, type ExcelParseResult } from '@/lib/excel-import';
 import {
   getExpenses,
   saveExpenses,
@@ -228,7 +228,21 @@ export default function ExcelImportPage() {
           });
         }
       } else {
-        setRowCategories((prev) => ({ ...prev, [row.idx]: newCat }));
+        // 같은 배치 안의 동일 가맹점 다른 행에도 즉시 반영 — 저장 전이라 DB 학습이
+        // 아직 안 먹으니, 이번 검수 내에서라도 같은 가맹점이면 바로 같이 바뀌게 한다.
+        const merchantKey = normMerchant(row.merchant);
+        setRowCategories((prev) => {
+          const next = { ...prev, [row.idx]: newCat };
+          if (result && merchantKey) {
+            const allRows = [...result.toInclude, ...result.needsReview];
+            allRows.forEach((r) => {
+              if (r.idx !== row.idx && normMerchant(r.merchant) === merchantKey) {
+                next[r.idx] = newCat;
+              }
+            });
+          }
+          return next;
+        });
       }
       setEditRow(null);
     },
@@ -680,6 +694,10 @@ function EditSheet({
   const [addingCat, setAddingCat] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('🏷️');
+  // n빵하기: 현재 금액을 N등분(버림)해서 바로 반영
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitBase, setSplitBase] = useState(amount);
+  const [splitN, setSplitN] = useState(2);
   const isTransfer = row.status === 'transfer_nudge';
   const cats = categories;
 
@@ -691,6 +709,22 @@ function EditSheet({
     setAddingCat(false);
     setNewCatName('');
     setNewCatIcon('🏷️');
+  };
+
+  const toggleSplit = () => {
+    if (splitOpen) {
+      setSplitOpen(false);
+      return;
+    }
+    setSplitBase(amount);
+    setSplitN(2);
+    setSplitOpen(true);
+  };
+
+  const applySplit = () => {
+    const n = Math.max(1, Math.floor(splitN) || 1);
+    setAmount(Math.floor(splitBase / n));
+    setSplitOpen(false);
   };
 
   return (
@@ -718,6 +752,48 @@ function EditSheet({
             />
             <span style={{ fontSize: 16, fontWeight: 700, color: T.textSec }}>원</span>
           </div>
+          <button
+            onClick={toggleSplit}
+            style={{
+              border: 0, background: 'transparent', color: T.accent, fontSize: 13, fontWeight: 700,
+              cursor: 'pointer', padding: '8px 0 0', fontFamily: 'Pretendard, system-ui, sans-serif',
+            }}
+          >
+            {splitOpen ? '닫기' : 'n빵하기'}
+          </button>
+          {splitOpen && (
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, color: T.textSec, fontWeight: 600 }}>인원</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={splitN}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/[^\d]/g, '');
+                  setSplitN(Math.max(1, Number(digits) || 1));
+                }}
+                style={{
+                  width: 48, textAlign: 'center', border: `1px solid ${T.divider}`, borderRadius: 10,
+                  padding: '8px 0', fontSize: 15, fontWeight: 700,
+                  fontFamily: 'Pretendard, system-ui, sans-serif', color: T.text,
+                }}
+              />
+              <span style={{ fontSize: 13, color: T.textSec, fontWeight: 600 }}>명</span>
+              <span style={{ fontSize: 12, color: T.textTer, margin: '0 2px' }}>
+                → {formatWon(Math.floor(splitBase / Math.max(1, splitN)))}
+              </span>
+              <button
+                onClick={applySplit}
+                style={{
+                  border: 0, borderRadius: 10, padding: '8px 14px', fontSize: 13, fontWeight: 700,
+                  background: T.accent, color: '#fff', cursor: 'pointer',
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                }}
+              >
+                적용
+              </button>
+            </div>
+          )}
         </div>
 
         {/* n빵 받은 내역 */}

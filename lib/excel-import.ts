@@ -81,7 +81,7 @@ function serialToDate(serial: number): string {
 }
 
 // 가맹점명 정규화 (학습/중복 매칭 공용)
-function normMerchant(s: string): string {
+export function normMerchant(s: string): string {
   return s.trim().toLowerCase().replace(/[\s()]/g, '').replace(/주식회사|㈜/g, '');
 }
 

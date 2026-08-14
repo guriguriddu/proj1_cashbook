@@ -11,10 +11,13 @@ import {
   Badge,
   CatIcon,
   MonthPickerSheet,
+  ExcludeCategoriesSheet,
 } from '@/components/ui';
 import { useExpensesByMonth, useMonthlySummary, useCategories } from '@/hooks/useSupabaseData';
-import { getCurrentMonth, getExcludedCategories } from '@/lib/supabase-storage';
+import { getCurrentMonth, getExcludedCategories, saveExcludedCategories } from '@/lib/supabase-storage';
 import { formatDateShort, getDaysRemaining } from '@/lib/utils';
+
+const EMPTY_SET = new Set<string>();
 
 // 원화 포맷 함수
 function formatWon(amount: number): string {
@@ -30,10 +33,15 @@ export default function HomePage() {
   const [monthSheetOpen, setMonthSheetOpen] = useState(false);
   // 내역 화면에서 설정한 "제외 카테고리"를 홈 요약에도 그대로 반영
   const [excludedCats, setExcludedCats] = useState<Set<string>>(new Set());
+  const [excludeSheetOpen, setExcludeSheetOpen] = useState(false);
+  // 꾹 누르고 있는 동안만 "모두 포함" 기준으로 미리보기 (떼면 원래 제외 설정으로 복귀)
+  const [peekAll, setPeekAll] = useState(false);
 
   useEffect(() => {
     getExcludedCategories().then((ids) => setExcludedCats(new Set(ids)));
   }, []);
+
+  const effectiveExcluded = peekAll ? EMPTY_SET : excludedCats;
   const todayMonth = getCurrentMonth();
   const currentMonth = (() => {
     const [y, m] = todayMonth.split('-').map(Number);
@@ -85,8 +93,9 @@ export default function HomePage() {
   }
 
   // 제외 카테고리를 뺀 실제 표시용 합계 — 예산도 같이 빼야 사용률이 안 왜곡됨
+  // '모두 포함' 꾹 누르는 동안은 effectiveExcluded가 빈 세트라 전체 기준으로 보임
   const includedBreakdown = Object.entries(summary.categoryBreakdown).filter(
-    ([catId]) => !excludedCats.has(catId)
+    ([catId]) => !effectiveExcluded.has(catId)
   );
   const usedTotal = includedBreakdown.reduce((s, [, c]) => s + c.spent, 0);
   const budgetTotal = includedBreakdown.reduce((s, [, c]) => s + c.budget, 0);
@@ -96,7 +105,7 @@ export default function HomePage() {
 
   // 카테고리별 사용량 정렬 (예산 높은 순, 최대 8개)
   const categoryRows = categories
-    .filter((c) => c.id !== 'other' && !excludedCats.has(c.id))
+    .filter((c) => c.id !== 'other' && !effectiveExcluded.has(c.id))
     .map((cat) => {
       const catData = summary.categoryBreakdown[cat.id];
       const used = catData?.spent || 0;
@@ -112,7 +121,7 @@ export default function HomePage() {
 
   // 최근 지출 4개 (제외 카테고리는 홈 요약과 일관되게 빼고 표시)
   const recentExpenses = expenses
-    .filter((e) => !excludedCats.has(e.category))
+    .filter((e) => !effectiveExcluded.has(e.category))
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 4);
 
@@ -233,15 +242,32 @@ export default function HomePage() {
               >
                 {isCurrentMonth ? '이번 달' : monthLabel} 사용 금액
                 {excludedCats.size > 0 && (
-                  <span
-                    onClick={() => router.push('/expenses')}
-                    style={{
-                      fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
-                      background: T.bgMuted, color: T.textTer, cursor: 'pointer',
-                    }}
-                  >
-                    {excludedCats.size}개 제외 중
-                  </span>
+                  <>
+                    <button
+                      onClick={() => setExcludeSheetOpen(true)}
+                      style={{
+                        fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
+                        background: T.bgMuted, color: T.textTer, cursor: 'pointer',
+                        border: 0, fontFamily: 'Pretendard, system-ui, sans-serif',
+                      }}
+                    >
+                      {excludedCats.size}개 제외 중
+                    </button>
+                    <button
+                      onPointerDown={() => setPeekAll(true)}
+                      onPointerUp={() => setPeekAll(false)}
+                      onPointerLeave={() => setPeekAll(false)}
+                      onPointerCancel={() => setPeekAll(false)}
+                      style={{
+                        fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
+                        background: peekAll ? T.accent : T.accentSoft, color: peekAll ? '#fff' : T.accent,
+                        cursor: 'pointer', border: 0, fontFamily: 'Pretendard, system-ui, sans-serif',
+                        touchAction: 'none', userSelect: 'none',
+                      }}
+                    >
+                      모두 포함
+                    </button>
+                  </>
                 )}
               </span>
               <button
@@ -501,6 +527,19 @@ export default function HomePage() {
             setMonthSheetOpen(false);
           }}
           onClose={() => setMonthSheetOpen(false)}
+        />
+      )}
+
+      {excludeSheetOpen && (
+        <ExcludeCategoriesSheet
+          categories={categories}
+          excluded={excludedCats}
+          onApply={(ids) => {
+            setExcludedCats(new Set(ids));
+            saveExcludedCategories(ids);
+            setExcludeSheetOpen(false);
+          }}
+          onClose={() => setExcludeSheetOpen(false)}
         />
       )}
     </Screen>

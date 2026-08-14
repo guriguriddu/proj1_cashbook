@@ -733,9 +733,10 @@ function EditSheet({
   const [addingCat, setAddingCat] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('🏷️');
-  // n빵하기: 현재 금액을 N등분(버림)해서 바로 반영
+  // n빵하기: 처음(원본) 금액을 N등분(버림) — 이미 나눈 금액을 또 나누면 안 되므로
+  // 자동 n빵 감지된 행이면 감지 전 원금(dutchPay.originalAmount), 아니면 파싱된 원래 금액 기준
+  const splitOriginal = row.dutchPay?.originalAmount ?? row.amount;
   const [splitOpen, setSplitOpen] = useState(false);
-  const [splitBase, setSplitBase] = useState(amount);
   const [splitN, setSplitN] = useState(2);
   const isTransfer = row.status === 'transfer_nudge';
   const cats = categories;
@@ -755,15 +756,16 @@ function EditSheet({
       setSplitOpen(false);
       return;
     }
-    setSplitBase(amount);
     setSplitN(2);
+    setAmount(Math.floor(splitOriginal / 2));
     setSplitOpen(true);
   };
 
-  const applySplit = () => {
-    const n = Math.max(1, Math.floor(splitN) || 1);
-    setAmount(Math.floor(splitBase / n));
-    setSplitOpen(false);
+  // 인원 수를 입력하는 즉시(항상 원본 금액 기준으로) 금액에 바로 반영
+  const changeSplitN = (n: number) => {
+    const clamped = Math.max(1, Math.floor(n) || 1);
+    setSplitN(clamped);
+    setAmount(Math.floor(splitOriginal / clamped));
   };
 
   return (
@@ -802,14 +804,14 @@ function EditSheet({
           </button>
           {splitOpen && (
             <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              <span style={{ fontSize: 13, color: T.textSec, fontWeight: 600 }}>인원</span>
+              <span style={{ fontSize: 13, color: T.textSec, fontWeight: 600 }}>원금 {formatWon(splitOriginal)} ÷</span>
               <input
                 type="text"
                 inputMode="numeric"
                 value={splitN}
                 onChange={(e) => {
                   const digits = e.target.value.replace(/[^\d]/g, '');
-                  setSplitN(Math.max(1, Number(digits) || 1));
+                  changeSplitN(Number(digits) || 1);
                 }}
                 style={{
                   width: 48, textAlign: 'center', border: `1px solid ${T.divider}`, borderRadius: 10,
@@ -818,19 +820,6 @@ function EditSheet({
                 }}
               />
               <span style={{ fontSize: 13, color: T.textSec, fontWeight: 600 }}>명</span>
-              <span style={{ fontSize: 12, color: T.textTer, margin: '0 2px' }}>
-                → {formatWon(Math.floor(splitBase / Math.max(1, splitN)))}
-              </span>
-              <button
-                onClick={applySplit}
-                style={{
-                  border: 0, borderRadius: 10, padding: '8px 14px', fontSize: 13, fontWeight: 700,
-                  background: T.accent, color: '#fff', cursor: 'pointer',
-                  fontFamily: 'Pretendard, system-ui, sans-serif',
-                }}
-              >
-                적용
-              </button>
             </div>
           )}
         </div>

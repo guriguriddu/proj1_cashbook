@@ -11,7 +11,7 @@ import {
   SecondaryButton,
 } from '@/components/ui';
 import { CatIcon } from '@/components/ui/CatIcon';
-import { getCategories, deleteCustomCategory, hideDefaultCategory } from '@/lib/supabase-storage';
+import { getCategories, deleteCustomCategory, hideDefaultCategory, addCustomCategory, generateId } from '@/lib/supabase-storage';
 import type { Category } from '@/types';
 
 export default function CategoriesPage() {
@@ -19,6 +19,10 @@ export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newIcon, setNewIcon] = useState('🏷️');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     load();
@@ -42,6 +46,29 @@ export default function CategoriesPage() {
       await load();
     } catch {
       alert('삭제에 실패했습니다');
+    }
+  }
+
+  async function handleAdd() {
+    const name = newName.trim();
+    if (!name || saving) return;
+    setSaving(true);
+    try {
+      await addCustomCategory({
+        id: `custom_${generateId()}`,
+        name,
+        icon: newIcon.trim() || '🏷️',
+        color: '#6B7280',
+        keywords: [],
+      });
+      setAdding(false);
+      setNewName('');
+      setNewIcon('🏷️');
+      await load();
+    } catch {
+      alert('추가에 실패했습니다');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -84,6 +111,70 @@ export default function CategoriesPage() {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {!loading && !adding && (
+            <button
+              onClick={() => setAdding(true)}
+              style={{
+                width: '100%', marginTop: 12, padding: '13px 16px',
+                border: `1.5px dashed ${T.divider}`, borderRadius: 16,
+                background: 'transparent', color: T.accent,
+                fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}
+            >
+              + 카테고리 추가
+            </button>
+          )}
+
+          {adding && (
+            <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="text"
+                value={newIcon}
+                onChange={(e) => setNewIcon(e.target.value.slice(0, 2))}
+                placeholder="🏷️"
+                style={{
+                  width: 48, textAlign: 'center', border: `1px solid ${T.divider}`, borderRadius: 10,
+                  padding: '12px 0', fontSize: 18, fontFamily: 'Pretendard, system-ui, sans-serif',
+                }}
+              />
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+                placeholder="카테고리 이름"
+                autoFocus
+                style={{
+                  flex: 1, border: `1px solid ${T.divider}`, borderRadius: 10,
+                  padding: '12px 14px', fontSize: 14, fontFamily: 'Pretendard, system-ui, sans-serif',
+                }}
+              />
+              <button
+                onClick={handleAdd}
+                disabled={!newName.trim() || saving}
+                style={{
+                  border: 0, borderRadius: 10, padding: '12px 16px', fontSize: 13, fontWeight: 700,
+                  background: newName.trim() ? T.accent : T.bgMuted,
+                  color: newName.trim() ? '#fff' : T.textTer,
+                  cursor: newName.trim() ? 'pointer' : 'default',
+                  fontFamily: 'Pretendard, system-ui, sans-serif',
+                }}
+              >
+                추가
+              </button>
+              <button
+                onClick={() => { setAdding(false); setNewName(''); setNewIcon('🏷️'); }}
+                style={{
+                  border: 0, background: 'transparent', color: T.textTer,
+                  fontSize: 20, padding: '4px 6px', cursor: 'pointer', lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
             </div>
           )}
         </div>

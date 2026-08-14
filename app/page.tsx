@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Screen,
@@ -13,7 +13,7 @@ import {
   MonthPickerSheet,
 } from '@/components/ui';
 import { useExpensesByMonth, useMonthlySummary, useCategories } from '@/hooks/useSupabaseData';
-import { getCurrentMonth } from '@/lib/supabase-storage';
+import { getCurrentMonth, getExcludedCategories } from '@/lib/supabase-storage';
 import { formatDateShort, getDaysRemaining } from '@/lib/utils';
 
 // 원화 포맷 함수
@@ -28,6 +28,12 @@ export default function HomePage() {
   const router = useRouter();
   const [monthOffset, setMonthOffset] = useState(0);
   const [monthSheetOpen, setMonthSheetOpen] = useState(false);
+  // 내역 화면에서 설정한 "제외 카테고리"를 홈 요약에도 그대로 반영
+  const [excludedCats, setExcludedCats] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    getExcludedCategories().then((ids) => setExcludedCats(new Set(ids)));
+  }, []);
   const todayMonth = getCurrentMonth();
   const currentMonth = (() => {
     const [y, m] = todayMonth.split('-').map(Number);
@@ -78,15 +84,19 @@ export default function HomePage() {
     );
   }
 
-  const usedTotal = summary.totalSpent;
-  const budgetTotal = summary.totalBudget;
-  const remaining = summary.remaining;
+  // 제외 카테고리를 뺀 실제 표시용 합계 — 예산도 같이 빼야 사용률이 안 왜곡됨
+  const includedBreakdown = Object.entries(summary.categoryBreakdown).filter(
+    ([catId]) => !excludedCats.has(catId)
+  );
+  const usedTotal = includedBreakdown.reduce((s, [, c]) => s + c.spent, 0);
+  const budgetTotal = includedBreakdown.reduce((s, [, c]) => s + c.budget, 0);
+  const remaining = budgetTotal - usedTotal;
   const pct = budgetTotal > 0 ? (usedTotal / budgetTotal) * 100 : 0;
   const over = remaining < 0;
 
   // 카테고리별 사용량 정렬 (예산 높은 순, 최대 8개)
   const categoryRows = categories
-    .filter((c) => c.id !== 'other')
+    .filter((c) => c.id !== 'other' && !excludedCats.has(c.id))
     .map((cat) => {
       const catData = summary.categoryBreakdown[cat.id];
       const used = catData?.spent || 0;
@@ -100,8 +110,9 @@ export default function HomePage() {
   // 카테고리 ID → 카테고리 객체 맵 (커스텀 카테고리 icon/color 조회용)
   const catLookup = new Map(categories.map((c) => [c.id, c]));
 
-  // 최근 지출 4개
-  const recentExpenses = [...expenses]
+  // 최근 지출 4개 (제외 카테고리는 홈 요약과 일관되게 빼고 표시)
+  const recentExpenses = expenses
+    .filter((e) => !excludedCats.has(e.category))
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 4);
 
@@ -215,9 +226,23 @@ export default function HomePage() {
                   fontWeight: 600,
                   color: T.textSec,
                   letterSpacing: '-0.01em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
                 }}
               >
                 {isCurrentMonth ? '이번 달' : monthLabel} 사용 금액
+                {excludedCats.size > 0 && (
+                  <span
+                    onClick={() => router.push('/expenses')}
+                    style={{
+                      fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
+                      background: T.bgMuted, color: T.textTer, cursor: 'pointer',
+                    }}
+                  >
+                    {excludedCats.size}개 제외 중
+                  </span>
+                )}
               </span>
               <button
                 onClick={() => router.push('/add')}

@@ -102,10 +102,27 @@ function ExpensesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialCat = searchParams.get('category') || 'all';
+  const initialMonth = searchParams.get('month');
+  const monthToOffset = (month: string) => {
+    const [y, m] = month.split('-').map(Number);
+    if (!y || !m) return 0;
+    const now = new Date();
+    const baseIdx = now.getFullYear() * 12 + now.getMonth();
+    return y * 12 + (m - 1) - baseIdx;
+  };
 
   const [period, setPeriod] = useState<PeriodType>('month');
-  const [offset, setOffset] = useState(0);
+  const [offset, setOffset] = useState(initialMonth ? monthToOffset(initialMonth) : 0);
   const [filterCat, setFilterCat] = useState(initialCat);
+
+  // Next.js router cache가 이 페이지 인스턴스를 재사용하는 경우, 최초 useState 값만으론
+  // 홈에서 다른 달/카테고리로 다시 들어왔을 때 반영이 안 되므로 쿼리 파라미터 변경을 계속 동기화
+  useEffect(() => {
+    setPeriod('month');
+    setOffset(initialMonth ? monthToOffset(initialMonth) : 0);
+    setFilterCat(searchParams.get('category') || 'all');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const [sort, setSort] = useState<'date' | 'amount'>('date');
   const [monthSheetOpen, setMonthSheetOpen] = useState(false);
   const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
@@ -113,12 +130,15 @@ function ExpensesContent() {
   const [budgetEditCat, setBudgetEditCat] = useState<string | null>(null);
   // "전체" 볼 때 목록에서 뺄 카테고리 (저장돼서 다음에 열어도 유지)
   const [excludedCats, setExcludedCats] = useState<Set<string>>(new Set());
+  const [excludedLoading, setExcludedLoading] = useState(true);
   const [excludeSheetOpen, setExcludeSheetOpen] = useState(false);
   // 제외 시트에 커스텀 카테고리까지 보여주기 위한 전체 카테고리 목록(기본 + 직접 추가)
   const [allCategories, setAllCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
 
   useEffect(() => {
-    storage.getExcludedCategories().then((ids) => setExcludedCats(new Set(ids)));
+    storage.getExcludedCategories()
+      .then((ids) => setExcludedCats(new Set(ids)))
+      .finally(() => setExcludedLoading(false));
     storage.getCategories().then(setAllCategories);
   }, []);
 
@@ -151,7 +171,7 @@ function ExpensesContent() {
     setFilterCat('all');
   };
 
-  if ((period === 'month' && (monthLoading || budgetLoading)) || !budget) {
+  if ((period === 'month' && (monthLoading || budgetLoading)) || excludedLoading || !budget) {
     return (
       <Screen>
         <div style={{ padding: 20, color: T.textSec }}>로딩 중...</div>

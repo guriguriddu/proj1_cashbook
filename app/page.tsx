@@ -33,12 +33,28 @@ export default function HomePage() {
   const [monthSheetOpen, setMonthSheetOpen] = useState(false);
   // 내역 화면에서 설정한 "제외 카테고리"를 홈 요약에도 그대로 반영
   const [excludedCats, setExcludedCats] = useState<Set<string>>(new Set());
+  const [excludedLoading, setExcludedLoading] = useState(true);
   const [excludeSheetOpen, setExcludeSheetOpen] = useState(false);
   // 꾹 누르고 있는 동안만 "모두 포함" 기준으로 미리보기 (떼면 원래 제외 설정으로 복귀)
   const [peekAll, setPeekAll] = useState(false);
 
+  // 홈에서 골라둔 달을 기억 — 다른 화면 갔다가 돌아와도 이번 달로 리셋되지 않도록
   useEffect(() => {
-    getExcludedCategories().then((ids) => setExcludedCats(new Set(ids)));
+    const saved = localStorage.getItem('home_month_offset');
+    if (saved !== null) {
+      const n = parseInt(saved, 10);
+      if (!Number.isNaN(n)) setMonthOffset(n);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('home_month_offset', String(monthOffset));
+  }, [monthOffset]);
+
+  useEffect(() => {
+    getExcludedCategories()
+      .then((ids) => setExcludedCats(new Set(ids)))
+      .finally(() => setExcludedLoading(false));
   }, []);
 
   const effectiveExcluded = peekAll ? EMPTY_SET : excludedCats;
@@ -57,7 +73,7 @@ export default function HomePage() {
   const { summary, loading: summaryLoading } = useMonthlySummary(currentMonth);
   const { categories } = useCategories();
 
-  const loading = expensesLoading || summaryLoading;
+  const loading = expensesLoading || summaryLoading || excludedLoading;
 
   if (loading || !summary) {
     return (
@@ -392,7 +408,7 @@ export default function HomePage() {
                 {isCurrentMonth ? '이번 달' : monthLabel} 상세 내역
               </div>
               <button
-                onClick={() => router.push('/expenses')}
+                onClick={() => router.push(`/expenses?month=${currentMonth}`)}
                 style={{
                   border: 0, background: 'transparent', cursor: 'pointer',
                   color: T.textTer, fontSize: 13, fontWeight: 500, padding: 0,
@@ -408,7 +424,7 @@ export default function HomePage() {
               >
                 <CategoryRow
                   row={r}
-                  onClick={() => router.push(`/expenses?category=${r.cat.id}`)}
+                  onClick={() => router.push(`/expenses?category=${r.cat.id}&month=${currentMonth}`)}
                 />
               </div>
             ))}
@@ -435,10 +451,10 @@ export default function HomePage() {
               }}
             >
               <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>
-                최근 소비 내역
+                {isCurrentMonth ? '최근 소비 내역' : `${monthLabel} 소비 내역`}
               </div>
               <button
-                onClick={() => router.push('/expenses')}
+                onClick={() => router.push(`/expenses?month=${currentMonth}`)}
                 style={{
                   border: 0, background: 'transparent', cursor: 'pointer',
                   color: T.textTer, fontSize: 13, fontWeight: 500, padding: 0,

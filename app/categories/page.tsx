@@ -9,9 +9,10 @@ import {
   T,
   PrimaryButton,
   SecondaryButton,
+  CategoryEditSheet,
 } from '@/components/ui';
 import { CatIcon } from '@/components/ui/CatIcon';
-import { getCategories, deleteCustomCategory, hideDefaultCategory, addCustomCategory, generateId } from '@/lib/supabase-storage';
+import { getCategories, deleteCustomCategory, hideDefaultCategory, addCustomCategory, updateCategory, generateId } from '@/lib/supabase-storage';
 import type { Category } from '@/types';
 
 export default function CategoriesPage() {
@@ -19,6 +20,7 @@ export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
+  const [editTarget, setEditTarget] = useState<Category | null>(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [newIcon, setNewIcon] = useState('🏷️');
@@ -49,6 +51,17 @@ export default function CategoriesPage() {
     }
   }
 
+  async function handleEditSave(updates: { name: string; icon: string; color: string }) {
+    if (!editTarget) return;
+    try {
+      await updateCategory({ ...editTarget, ...updates });
+      setEditTarget(null);
+      await load();
+    } catch {
+      alert('수정에 실패했습니다');
+    }
+  }
+
   async function handleAdd() {
     const name = newName.trim();
     if (!name || saving) return;
@@ -75,7 +88,7 @@ export default function CategoriesPage() {
   return (
     <Screen>
       <AppHeader title="카테고리 관리" onBack={() => router.back()} />
-      <ScreenBody padBottom={100}>
+      <ScreenBody padBottom={180}>
 
         <div style={{ padding: '16px 20px 8px' }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: T.textTer, marginBottom: 10 }}>
@@ -86,30 +99,37 @@ export default function CategoriesPage() {
           ) : (
             <div style={{ background: T.bg, borderRadius: 16, overflow: 'hidden', border: `1px solid ${T.divider}` }}>
               {categories.map((cat, i) => (
-                <div
+                <button
                   key={cat.id}
+                  onClick={() => setEditTarget(cat)}
                   style={{
+                    width: '100%',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 12,
                     padding: '13px 16px',
+                    border: 0,
+                    background: 'transparent',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontFamily: 'Pretendard, system-ui, sans-serif',
                     borderBottom: i < categories.length - 1 ? `1px solid ${T.divider}` : 'none',
                   }}
                 >
                   <CatIcon catId={cat.id} size={36} icon={cat.icon} color={cat.color} />
                   <span style={{ fontSize: 15, fontWeight: 600, flex: 1 }}>{cat.name}</span>
-                  <button
-                    onClick={() => setDeleteTarget(cat)}
+                  <span
+                    role="button"
+                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(cat); }}
                     style={{
-                      border: 0, background: 'transparent',
                       color: T.textTer, cursor: 'pointer',
                       fontSize: 20, padding: '4px 6px',
                       lineHeight: 1,
                     }}
                   >
                     ×
-                  </button>
-                </div>
+                  </span>
+                </button>
               ))}
             </div>
           )}
@@ -183,16 +203,25 @@ export default function CategoriesPage() {
       {/* 하단 저장 버튼 */}
       <div
         style={{
-          position: 'fixed', left: 0, right: 0, bottom: 0,
-          padding: '12px 20px 28px',
+          position: 'fixed', left: 0, right: 0,
+          bottom: 'calc(64px + max(20px, env(safe-area-inset-bottom)))',
+          padding: '12px 20px 16px',
           background: 'linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0))',
-          maxWidth: 512, margin: '0 auto', zIndex: 100,
+          maxWidth: 512, margin: '0 auto', zIndex: 10,
         }}
       >
         <PrimaryButton onClick={() => router.back()}>
           저장
         </PrimaryButton>
       </div>
+
+      {editTarget && (
+        <CategoryEditSheet
+          category={editTarget}
+          onSave={handleEditSave}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
 
       {/* 삭제 확인 모달 */}
       {deleteTarget && (

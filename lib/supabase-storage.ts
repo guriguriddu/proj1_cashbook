@@ -564,6 +564,9 @@ export async function getCategories(): Promise<Category[]> {
 
   const merchantCats = (settingsData?.merchant_categories as Record<string, string>) || {};
   const hiddenDefaults: string[] = JSON.parse(merchantCats['__hidden_defaults'] || '[]');
+  const overrides: Record<string, Pick<Category, 'name' | 'icon' | 'color'>> = JSON.parse(
+    merchantCats['__category_overrides'] || '{}'
+  );
 
   const customCategories: Category[] = ((catData || []) as CategoryRow[]).map((c) => ({
     id: c.category_id,
@@ -575,8 +578,42 @@ export async function getCategories(): Promise<Category[]> {
     isCustom: true,
   }));
 
-  const visibleDefaults = DEFAULT_CATEGORIES.filter((c) => !hiddenDefaults.includes(c.id));
+  const visibleDefaults = DEFAULT_CATEGORIES.filter((c) => !hiddenDefaults.includes(c.id)).map((c) =>
+    overrides[c.id] ? { ...c, ...overrides[c.id] } : c
+  );
   return [...visibleDefaults, ...customCategories];
+}
+
+// 카테고리 수정: 커스텀 카테고리는 행을 직접 수정, 기본 카테고리는 user_settings에 덮어쓰기 저장
+export async function updateCategory(category: Category): Promise<void> {
+  const supabase = getSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  if (category.isCustom) {
+    const { error } = await supabase
+      .from('categories')
+      .update({ name: category.name, icon: category.icon, color: category.color })
+      .eq('user_id', user.id)
+      .eq('category_id', category.id)
+      .eq('is_default', false);
+    if (error) throw error;
+    return;
+  }
+
+  const { data } = await supabase.from('user_settings').select('merchant_categories').eq('user_id', user.id).single();
+  const current: Record<string, string> = (data?.merchant_categories as Record<string, string>) || {};
+  const overrides: Record<string, Pick<Category, 'name' | 'icon' | 'color'>> = JSON.parse(
+    current['__category_overrides'] || '{}'
+  );
+  overrides[category.id] = { name: category.name, icon: category.icon, color: category.color };
+  current['__category_overrides'] = JSON.stringify(overrides);
+
+  await supabase.from('user_settings').upsert({
+    user_id: user.id,
+    merchant_categories: current,
+    updated_at: new Date().toISOString(),
+  });
 }
 
 export async function hideDefaultCategory(categoryId: string): Promise<void> {

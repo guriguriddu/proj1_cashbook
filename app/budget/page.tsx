@@ -122,7 +122,7 @@ export default function BudgetPage() {
         <StepBtn onClick={() => setOffset(offset + 1)} dir="next" />
       </div>
 
-      <ScreenBody padBottom={100}>
+      <ScreenBody padBottom={180}>
         {/* Monthly hero card */}
         <MonthlyGoalCard
           monthLabel={monthLabel}
@@ -288,8 +288,8 @@ export default function BudgetPage() {
           position: 'fixed',
           left: 0,
           right: 0,
-          bottom: 0,
-          padding: '12px 20px 28px',
+          bottom: 'calc(64px + max(20px, env(safe-area-inset-bottom)))',
+          padding: '12px 20px 16px',
           background: 'linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0))',
           maxWidth: 512,
           margin: '0 auto',

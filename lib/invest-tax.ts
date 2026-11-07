@@ -202,7 +202,8 @@ export function classifyPayMethod(payMethod?: string, category?: string, merchan
   if (!s) return 'other';
   // 체크카드·현금영수증 (신용보다 먼저 검사 — "체크카드"에 '카드'가 들어가므로)
   // 토스뱅크카드는 '체크' 글자가 없지만 체크카드
-  if (/체크|check|현금영수증|현금|토스뱅크카드/.test(s)) return 'check';
+  // 단순 '현금'은 현금영수증 발급 여부를 알 수 없어 미분류(other)로 둔다 — 직접 지정
+  if (/체크|check|현금영수증|토스뱅크카드/.test(s)) return 'check';
   // 신용카드
   if (/카드|card|신용/.test(s)) return 'credit';
   // 간편결제(머니/페이)·계좌이체·통장 등 → 실제 수단 미상

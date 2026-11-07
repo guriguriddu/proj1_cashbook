@@ -16,6 +16,7 @@ import {
   type YearendInputs,
   type PayOverride,
 } from '@/lib/invest-tax';
+import { parseYearendFile, type YearendItem } from '@/lib/yearend-import';
 import type { Expense } from '@/types';
 import { SectionCard, InputRow, ToggleRow, ResultRow, InfoBanner, NumberEditSheet } from '@/components/invest-ui';
 
@@ -70,13 +71,52 @@ export default function InvestPage() {
     });
   }, []);
 
+  // 뱅샐 파일 업로드 (메모리에서만 계산 — DB·가계부에 저장하지 않음)
+  const [upload, setUpload] = useState<{ fileName: string; items: YearendItem[]; years: number[] } | null>(null);
+  const [uploadYear, setUploadYear] = useState(currentYear);
+  const [uploadError, setUploadError] = useState('');
+  const [includedReasons, setIncludedReasons] = useState<string[]>([]);
+
+  const handleUpload = async (file: File) => {
+    setUploadError('');
+    try {
+      const res = await parseYearendFile(await file.arrayBuffer());
+      if (res.items.length === 0) throw new Error('지출 내역이 없어요.');
+      setUpload({ fileName: file.name, items: res.items, years: res.years });
+      setUploadYear(res.years.includes(currentYear) ? currentYear : res.years[0]);
+      setIncludedReasons([]);
+      setYearendManual({});
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : '파일을 읽을 수 없어요.');
+    }
+  };
+
+  const activeYear = upload ? uploadYear : currentYear;
+  const activeItems = useMemo(
+    () => (upload ? upload.items.filter((i) => !i.excludeReason || includedReasons.includes(i.excludeReason)) : yearItems),
+    [upload, includedReasons, yearItems]
+  );
+  // 공제 제외로 분류된 항목 (사유별 합계)
+  const excludedGroups = useMemo(() => {
+    if (!upload) return [];
+    const map = new Map<string, { reason: string; amount: number; count: number }>();
+    for (const i of upload.items) {
+      if (!i.excludeReason || !i.date.startsWith(String(uploadYear))) continue;
+      const g = map.get(i.excludeReason) ?? { reason: i.excludeReason, amount: 0, count: 0 };
+      g.amount += i.amount;
+      g.count += 1;
+      map.set(i.excludeReason, g);
+    }
+    return [...map.values()].sort((a, b) => b.amount - a.amount);
+  }, [upload, uploadYear]);
+
   const spendByPay = useMemo(
-    () => (yearItems ? summarizeSpendByPay(yearItems, currentYear, payOverrides) : null),
-    [yearItems, payOverrides, currentYear]
+    () => (activeItems ? summarizeSpendByPay(activeItems, activeYear, payOverrides) : null),
+    [activeItems, payOverrides, activeYear]
   );
   const otherPayGroups = useMemo(
-    () => (yearItems ? groupOtherPayMethods(yearItems, currentYear) : []),
-    [yearItems, currentYear]
+    () => (activeItems ? groupOtherPayMethods(activeItems, activeYear) : []),
+    [activeItems, activeYear]
   );
 
   // 계산기 입력 = 직접 수정값 우선, 없으면 가계부 집계값
@@ -687,6 +727,110 @@ export default function InvestPage() {
         {tab === 'tax' && taxType === 'yearend' && (
           <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
+            {/* 홈택스 바로가기 */}
+            <a
+              href="https://www.hometax.go.kr"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: T.accent, color: '#fff', borderRadius: 16, padding: '14px 16px',
+                textDecoration: 'none',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800 }}>홈택스 연말정산 바로가기 ↗</div>
+                <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>
+                  최종 공제액은 국세청 간소화 자료(보통 1월 중순 오픈)가 정확해요. 아래는 사전 예측이에요.
+                </div>
+              </div>
+            </a>
+
+            {/* 뱅샐 파일 업로드 */}
+            <SectionCard title="뱅크샐러드 파일로 계산">
+              <div style={{ padding: '14px 16px' }}>
+                <div style={{ fontSize: 12, color: T.textTer, lineHeight: 1.55, marginBottom: 10 }}>
+                  가계부에 저장하지 않고 파일만 읽어서 계산해요. n빵·내역 정리와 상관없이 카드로 결제한 원금 기준이고, 환불은 차감해요.
+                  보험·공과금·통신비·세금 등 공제 제외 항목은 자동으로 빼요.
+                </div>
+                <label style={{
+                  display: 'block', textAlign: 'center', padding: '12px 0', borderRadius: 12,
+                  border: `1.5px dashed ${T.accent}`, color: T.accent, fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                }}>
+                  {upload ? '다른 파일 선택' : '엑셀 파일 선택 (.xlsx)'}
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUpload(f);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                {uploadError && <div style={{ fontSize: 12, color: T.warn, marginTop: 8 }}>{uploadError}</div>}
+                {upload && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+                      <span style={{ fontSize: 12, color: T.textSec, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>
+                        📄 {upload.fileName}
+                      </span>
+                      <button
+                        onClick={() => { setUpload(null); setUploadError(''); setYearendManual({}); }}
+                        style={{ fontSize: 12, color: T.textTer, background: 'none', border: 'none', cursor: 'pointer' }}
+                      >
+                        파일 해제 (가계부로 복귀)
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                      {upload.years.map((y) => (
+                        <button
+                          key={y}
+                          onClick={() => { setUploadYear(y); setYearendManual({}); }}
+                          style={{
+                            padding: '6px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                            border: y === uploadYear ? `1.5px solid ${T.accent}` : `1px solid ${T.divider}`,
+                            background: y === uploadYear ? T.accentSoft : 'transparent',
+                            color: y === uploadYear ? T.accent : T.textTer,
+                          }}
+                        >
+                          {y}년
+                        </button>
+                      ))}
+                    </div>
+                    {excludedGroups.length > 0 && (
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: T.textSec, marginBottom: 6 }}>공제 제외로 뺀 항목 (눌러서 포함)</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {excludedGroups.map((g) => {
+                            const on = includedReasons.includes(g.reason);
+                            return (
+                              <button
+                                key={g.reason}
+                                onClick={() => {
+                                  setIncludedReasons((p) => (on ? p.filter((r) => r !== g.reason) : [...p, g.reason]));
+                                  setYearendManual({});
+                                }}
+                                style={{
+                                  padding: '6px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                                  border: on ? `1.5px solid ${T.accent}` : `1px solid ${T.divider}`,
+                                  background: on ? T.accentSoft : 'transparent',
+                                  color: on ? T.accent : T.textTer,
+                                }}
+                              >
+                                {g.reason} {g.count}건 · {formatWon(g.amount)}{on ? ' (포함됨)' : ''}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </SectionCard>
+
             {/* 전략 가이드 */}
             <div style={{ background: T.text, borderRadius: 18, padding: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: 12 }}>
@@ -713,7 +857,7 @@ export default function InvestPage() {
 
             {/* 올해 가계부 기반 결제수단별 사용액 */}
             {spendByPay && spendByPay.total > 0 && (
-              <SectionCard title={`${currentYear}년 결제수단별 사용액 (가계부)`}>
+              <SectionCard title={`${activeYear}년 결제수단별 사용액 (${upload ? '업로드 파일' : '가계부'})`}>
                 {[
                   { label: '신용카드', val: spendByPay.credit, color: T.textSec },
                   { label: '체크카드 · 현금영수증', val: spendByPay.check, color: T.accent },
@@ -733,7 +877,7 @@ export default function InvestPage() {
                       </span>
                     </div>
                     <div style={{ fontSize: 11, color: T.textTer, marginTop: 4, lineHeight: 1.5 }}>
-                      실제로 결제된 수단을 선택하면 위 사용액에 합산돼요. 현금영수증을 안 받은 계좌이체는 &lsquo;제외&rsquo;를 선택하세요.
+                      실제로 결제된 수단을 선택하면 위 사용액에 합산돼요. 현금·계좌이체는 현금영수증을 받았을 때만 공제되니, 안 받았다면 &lsquo;제외&rsquo;를 선택하세요. 선택 전에는 공제에 포함되지 않아요.
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
                       {otherPayGroups.map((g) => {
@@ -751,7 +895,7 @@ export default function InvestPage() {
                             <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                               {([
                                 { value: 'credit' as const, label: '신용', color: T.textSec },
-                                { value: 'check' as const, label: '체크', color: T.accent },
+                                { value: 'check' as const, label: '체크·현영', color: T.accent },
                                 { value: 'exclude' as const, label: '제외', color: T.textTer },
                               ]).map((opt) => {
                                 const on = current === opt.value;

@@ -71,7 +71,7 @@ export interface ExcelParseResult {
 }
 
 // Excel serial date → YYYY-MM-DD
-function serialToDate(serial: number): string {
+export function serialToDate(serial: number): string {
   const ms = Math.round((serial - 25569) * 86400 * 1000);
   const d = new Date(ms);
   const y = d.getUTCFullYear();

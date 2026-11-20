@@ -225,7 +225,8 @@ function ExpensesContent() {
   ];
 
   const catData = filterCat !== 'all' ? allCategories.find((c) => c.id === filterCat) : null;
-  const catBudget = catData ? budget.categoryBudgets[catData.id] || 0 : 0;
+  // 월별로 따로 정한 예산이 있으면 그 값 사용 (홈·전체 사용률과 동일 기준)
+  const catBudget = catData ? storage.getCategoryBudgetForMonth(budget, monthKey, catData.id) : 0;
   const catPct = catBudget > 0 ? (filteredTotal / catBudget) * 100 : 0;
 
   const handleDelete = async (id: string, skipConfirm = false) => {
@@ -309,7 +310,10 @@ function ExpensesContent() {
             <MoneyText value={filteredTotal} size={28} weight={800} />
 
             {filterCat === 'all' && (() => {
-              const totalBudget = allCategories.reduce((a, c) => a + storage.getCategoryBudgetForMonth(budget, monthKey, c.id), 0);
+              // 목록·합계에서 빠진 제외 카테고리는 예산도 같이 빼야 사용률이 안 낮아짐 (홈과 동일 기준)
+              const totalBudget = allCategories
+                .filter((c) => !excludedCats.has(c.id))
+                .reduce((a, c) => a + storage.getCategoryBudgetForMonth(budget, monthKey, c.id), 0);
               const totalPct = totalBudget > 0 ? (filteredTotal / totalBudget) * 100 : 0;
               return (
                 <div style={{ marginTop: 14 }}>
@@ -454,7 +458,9 @@ function ExpensesContent() {
             <MoneyText value={rangeTotal} size={28} weight={800} />
             {filterCat === 'all' && (() => {
               const monthCount = period === 'quarter' ? 3 : period === 'half' ? 6 : 12;
-              const monthlyBudget = Object.values(budget.categoryBudgets).reduce((a, v) => a + v, 0);
+              const monthlyBudget = Object.entries(budget.categoryBudgets)
+                .filter(([id]) => !excludedCats.has(id))
+                .reduce((a, [, v]) => a + v, 0);
               const totalBudget = monthlyBudget * monthCount;
               const totalPct = totalBudget > 0 ? (rangeTotal / totalBudget) * 100 : 0;
               const periodLabel = period === 'quarter' ? '분기' : period === 'half' ? '반기' : '연간';

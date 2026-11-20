@@ -127,7 +127,8 @@ export default function HomePage() {
       const used = catData?.spent || 0;
       const cap = catData?.budget || 0;
       const p = cap > 0 ? (used / cap) * 100 : used > 0 ? 100 : 0;
-      return { cat, used, cap, pct: p, over: used > cap };
+      // 예산이 없는 카테고리는 '초과'로 보지 않음 (배지는 뜨는데 막대는 안 빨개지던 불일치 방지)
+      return { cat, used, cap, pct: p, over: cap > 0 && used > cap };
     })
     .sort((a, b) => b.cap - a.cap)
     .slice(0, 8);

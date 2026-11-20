@@ -240,7 +240,9 @@ export async function getExpensesByMonth(month: string): Promise<Expense[]> {
   if (!user) return [];
 
   const startDate = `${month}-01`;
-  const endDate = `${month}-31`;
+  // 달마다 말일이 다르다 (11월에 '-31'을 쓰면 잘못된 날짜라 쿼리가 실패해 빈 목록이 나옴)
+  const [y, m] = month.split('-').map(Number);
+  const endDate = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
 
   const { data, error } = await supabase
     .from('expenses')
